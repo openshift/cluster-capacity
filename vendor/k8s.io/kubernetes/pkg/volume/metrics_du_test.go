@@ -22,7 +22,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	utiltesting "k8s.io/client-go/util/testing"
@@ -30,15 +29,7 @@ import (
 	volumetest "k8s.io/kubernetes/pkg/volume/testing"
 )
 
-func getExpectedBlockSize(path string) int64 {
-	statfs := &syscall.Statfs_t{}
-	err := syscall.Statfs(path, statfs)
-	if err != nil {
-		return 0
-	}
-
-	return int64(statfs.Bsize)
-}
+const expectedBlockSize = 4096
 
 // TestMetricsDuGetCapacity tests that MetricsDu can read disk usage
 // for path
@@ -78,7 +69,7 @@ func TestMetricsDuGetCapacity(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when calling GetMetrics %v", err)
 	}
-	if e, a := (expectedEmptyDirUsage.Value() + getExpectedBlockSize(filepath.Join(tmpDir, "f1"))), actual.Used.Value(); e != a {
+	if e, a := (expectedEmptyDirUsage.Value() + expectedBlockSize), actual.Used.Value(); e != a {
 		t.Errorf("Unexpected Used for directory with file.  Expected %v, got %d.", e, a)
 	}
 }

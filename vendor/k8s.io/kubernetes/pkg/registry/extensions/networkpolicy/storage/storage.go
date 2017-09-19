@@ -34,9 +34,12 @@ type REST struct {
 // NewREST returns a RESTStorage object that will work against network policies.
 func NewREST(optsGetter generic.RESTOptionsGetter) *REST {
 	store := &genericregistry.Store{
-		Copier:            api.Scheme,
-		NewFunc:           func() runtime.Object { return &extensionsapi.NetworkPolicy{} },
-		NewListFunc:       func() runtime.Object { return &extensionsapi.NetworkPolicyList{} },
+		Copier:      api.Scheme,
+		NewFunc:     func() runtime.Object { return &extensionsapi.NetworkPolicy{} },
+		NewListFunc: func() runtime.Object { return &extensionsapi.NetworkPolicyList{} },
+		ObjectNameFunc: func(obj runtime.Object) (string, error) {
+			return obj.(*extensionsapi.NetworkPolicy).Name, nil
+		},
 		PredicateFunc:     networkpolicy.MatchNetworkPolicy,
 		QualifiedResource: extensionsapi.Resource("networkpolicies"),
 		WatchCacheSize:    cachesize.GetWatchCacheSizeByResource("networkpolicies"),

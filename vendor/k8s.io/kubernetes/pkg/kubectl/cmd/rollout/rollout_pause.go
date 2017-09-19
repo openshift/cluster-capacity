@@ -53,7 +53,7 @@ var (
 		Mark the provided resource as paused
 
 		Paused resources will not be reconciled by a controller.
-		Use "kubectl rollout resume" to resume a paused resource.
+		Use \"kubectl rollout resume\" to resume a paused resource.
 		Currently only deployments support being paused.`)
 
 	pause_example = templates.Examples(`
@@ -111,7 +111,7 @@ func (o *PauseConfig) CompletePause(f cmdutil.Factory, cmd *cobra.Command, out i
 		return err
 	}
 
-	r := f.NewBuilder(true).
+	r := resource.NewBuilder(o.Mapper, o.Typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
 		NamespaceParam(cmdNamespace).DefaultNamespace().
 		FilenameParam(enforceNamespace, &o.FilenameOptions).
 		ResourceTypeOrNameArgs(true, args...).

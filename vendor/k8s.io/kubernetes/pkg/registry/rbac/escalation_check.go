@@ -29,7 +29,9 @@ import (
 func EscalationAllowed(ctx genericapirequest.Context) bool {
 	u, ok := genericapirequest.UserFrom(ctx)
 	if !ok {
-		return false
+		// the only way to be without a user is to either have no authenticators by explicitly saying that's your preference
+		// or to be connecting via the insecure port, in which case this logically doesn't apply
+		return true
 	}
 
 	// system:masters is special because the API server uses it for privileged loopback connections

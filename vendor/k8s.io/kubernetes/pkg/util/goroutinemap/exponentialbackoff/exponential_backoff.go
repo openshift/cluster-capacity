@@ -32,9 +32,7 @@ const (
 
 	// maxDurationBeforeRetry is the maximum amount of time that
 	// durationBeforeRetry will grow to due to exponential backoff.
-	// Value is slightly offset from 2 minutes to make timeouts due to this
-	// constant recognizable.
-	maxDurationBeforeRetry time.Duration = 2*time.Minute + 2*time.Second
+	maxDurationBeforeRetry time.Duration = 2 * time.Minute
 )
 
 // ExponentialBackoff contains the last occurrence of an error and the duration

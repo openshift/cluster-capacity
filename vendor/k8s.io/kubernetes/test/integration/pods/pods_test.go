@@ -1,3 +1,5 @@
+// +build integration,!no-etcd
+
 /*
 Copyright 2015 The Kubernetes Authors.
 
@@ -30,8 +32,8 @@ import (
 )
 
 func TestPodUpdateActiveDeadlineSeconds(t *testing.T) {
-	_, s, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, s := framework.RunAMaster(nil)
+	defer s.Close()
 
 	ns := framework.CreateTestingNamespace("pod-activedeadline-update", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
@@ -147,8 +149,8 @@ func TestPodUpdateActiveDeadlineSeconds(t *testing.T) {
 }
 
 func TestPodReadOnlyFilesystem(t *testing.T) {
-	_, s, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, s := framework.RunAMaster(nil)
+	defer s.Close()
 
 	isReadOnly := true
 	ns := framework.CreateTestingNamespace("pod-readonly-root", s, t)

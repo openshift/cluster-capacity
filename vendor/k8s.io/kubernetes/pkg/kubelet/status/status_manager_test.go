@@ -33,10 +33,8 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset/fake"
-	kubeconfigmap "k8s.io/kubernetes/pkg/kubelet/configmap"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	kubepod "k8s.io/kubernetes/pkg/kubelet/pod"
 	podtest "k8s.io/kubernetes/pkg/kubelet/pod/testing"
@@ -75,7 +73,7 @@ func (m *manager) testSyncBatch() {
 }
 
 func newTestManager(kubeClient clientset.Interface) *manager {
-	podManager := kubepod.NewBasicPodManager(podtest.NewFakeMirrorClient(), kubesecret.NewFakeManager(), kubeconfigmap.NewFakeManager())
+	podManager := kubepod.NewBasicPodManager(podtest.NewFakeMirrorClient(), kubesecret.NewFakeManager())
 	podManager.AddPod(getTestPod())
 	return NewManager(kubeClient, podManager, &statustest.FakePodDeletionSafetyProvider{}).(*manager)
 }
@@ -90,10 +88,8 @@ func getRandomPodStatus() v1.PodStatus {
 	}
 }
 
-func verifyActions(t *testing.T, manager *manager, expectedActions []core.Action) {
-	manager.consumeUpdates()
-	actions := manager.kubeClient.(*fake.Clientset).Actions()
-	defer manager.kubeClient.(*fake.Clientset).ClearActions()
+func verifyActions(t *testing.T, kubeClient clientset.Interface, expectedActions []core.Action) {
+	actions := kubeClient.(*fake.Clientset).Actions()
 	if len(actions) != len(expectedActions) {
 		t.Fatalf("unexpected actions, got: %+v expected: %+v", actions, expectedActions)
 		return
@@ -109,22 +105,23 @@ func verifyActions(t *testing.T, manager *manager, expectedActions []core.Action
 
 func verifyUpdates(t *testing.T, manager *manager, expectedUpdates int) {
 	// Consume all updates in the channel.
-	numUpdates := manager.consumeUpdates()
+	numUpdates := 0
+	for {
+		hasUpdate := true
+		select {
+		case <-manager.podStatusChannel:
+			numUpdates++
+		default:
+			hasUpdate = false
+		}
+
+		if !hasUpdate {
+			break
+		}
+	}
+
 	if numUpdates != expectedUpdates {
 		t.Errorf("unexpected number of updates %d, expected %d", numUpdates, expectedUpdates)
-	}
-}
-
-func (m *manager) consumeUpdates() int {
-	updates := 0
-	for {
-		select {
-		case syncRequest := <-m.podStatusChannel:
-			m.syncPod(syncRequest.podUID, syncRequest.status)
-			updates++
-		default:
-			return updates
-		}
 	}
 }
 
@@ -186,7 +183,7 @@ func TestNewStatusSetsReadyTransitionTime(t *testing.T) {
 	syncer.SetPodStatus(pod, podStatus)
 	verifyUpdates(t, syncer, 1)
 	status := expectPodStatus(t, syncer, pod)
-	readyCondition := podutil.GetPodReadyCondition(status)
+	readyCondition := v1.GetPodReadyCondition(status)
 	if readyCondition.LastTransitionTime.IsZero() {
 		t.Errorf("Unexpected: last transition time not set")
 	}
@@ -239,8 +236,8 @@ func TestChangedStatusUpdatesLastTransitionTime(t *testing.T) {
 	verifyUpdates(t, syncer, 1)
 	newStatus := expectPodStatus(t, syncer, pod)
 
-	oldReadyCondition := podutil.GetPodReadyCondition(oldStatus)
-	newReadyCondition := podutil.GetPodReadyCondition(newStatus)
+	oldReadyCondition := v1.GetPodReadyCondition(oldStatus)
+	newReadyCondition := v1.GetPodReadyCondition(newStatus)
 	if newReadyCondition.LastTransitionTime.IsZero() {
 		t.Errorf("Unexpected: last transition time not set")
 	}
@@ -278,8 +275,8 @@ func TestUnchangedStatusPreservesLastTransitionTime(t *testing.T) {
 	verifyUpdates(t, syncer, 0)
 	newStatus := expectPodStatus(t, syncer, pod)
 
-	oldReadyCondition := podutil.GetPodReadyCondition(oldStatus)
-	newReadyCondition := podutil.GetPodReadyCondition(newStatus)
+	oldReadyCondition := v1.GetPodReadyCondition(oldStatus)
+	newReadyCondition := v1.GetPodReadyCondition(newStatus)
 	if newReadyCondition.LastTransitionTime.IsZero() {
 		t.Errorf("Unexpected: last transition time not set")
 	}
@@ -288,25 +285,34 @@ func TestUnchangedStatusPreservesLastTransitionTime(t *testing.T) {
 	}
 }
 
-func TestSyncPodIgnoresNotFound(t *testing.T) {
+func TestSyncBatchIgnoresNotFound(t *testing.T) {
 	client := fake.Clientset{}
 	syncer := newTestManager(&client)
 	client.AddReactor("get", "pods", func(action core.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.NewNotFound(api.Resource("pods"), "test-pod")
 	})
 	syncer.SetPodStatus(getTestPod(), getRandomPodStatus())
-	verifyActions(t, syncer, []core.Action{getAction()})
+	syncer.testSyncBatch()
+
+	verifyActions(t, syncer.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+	})
 }
 
-func TestSyncPod(t *testing.T) {
+func TestSyncBatch(t *testing.T) {
 	syncer := newTestManager(&fake.Clientset{})
 	testPod := getTestPod()
 	syncer.kubeClient = fake.NewSimpleClientset(testPod)
 	syncer.SetPodStatus(testPod, getRandomPodStatus())
-	verifyActions(t, syncer, []core.Action{getAction(), updateAction()})
+	syncer.testSyncBatch()
+	verifyActions(t, syncer.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+		core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}},
+	},
+	)
 }
 
-func TestSyncPodChecksMismatchedUID(t *testing.T) {
+func TestSyncBatchChecksMismatchedUID(t *testing.T) {
 	syncer := newTestManager(&fake.Clientset{})
 	pod := getTestPod()
 	pod.UID = "first"
@@ -316,16 +322,19 @@ func TestSyncPodChecksMismatchedUID(t *testing.T) {
 	syncer.podManager.AddPod(differentPod)
 	syncer.kubeClient = fake.NewSimpleClientset(pod)
 	syncer.SetPodStatus(differentPod, getRandomPodStatus())
-	verifyActions(t, syncer, []core.Action{getAction()})
+	syncer.testSyncBatch()
+	verifyActions(t, syncer.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+	})
 }
 
-func TestSyncPodNoDeadlock(t *testing.T) {
+func TestSyncBatchNoDeadlock(t *testing.T) {
 	client := &fake.Clientset{}
 	m := newTestManager(client)
 	pod := getTestPod()
 
 	// Setup fake client.
-	var ret *v1.Pod
+	var ret v1.Pod
 	var err error
 	client.AddReactor("*", "pods", func(action core.Action) (bool, runtime.Object, error) {
 		switch action := action.(type) {
@@ -336,45 +345,58 @@ func TestSyncPodNoDeadlock(t *testing.T) {
 		default:
 			assert.Fail(t, "Unexpected Action: %+v", action)
 		}
-		return true, ret, err
+		return true, &ret, err
 	})
 
 	pod.Status.ContainerStatuses = []v1.ContainerStatus{{State: v1.ContainerState{Running: &v1.ContainerStateRunning{}}}}
 
-	t.Logf("Pod not found.")
-	ret = nil
+	getAction := core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}}
+	updateAction := core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}}
+
+	// Pod not found.
+	ret = *pod
 	err = errors.NewNotFound(api.Resource("pods"), pod.Name)
 	m.SetPodStatus(pod, getRandomPodStatus())
-	verifyActions(t, m, []core.Action{getAction()})
+	m.testSyncBatch()
+	verifyActions(t, client, []core.Action{getAction})
+	client.ClearActions()
 
-	t.Logf("Pod was recreated.")
-	ret = getTestPod()
+	// Pod was recreated.
 	ret.UID = "other_pod"
 	err = nil
 	m.SetPodStatus(pod, getRandomPodStatus())
-	verifyActions(t, m, []core.Action{getAction()})
+	m.testSyncBatch()
+	verifyActions(t, client, []core.Action{getAction})
+	client.ClearActions()
 
-	t.Logf("Pod not deleted (success case).")
-	ret = getTestPod()
+	// Pod not deleted (success case).
+	ret = *pod
 	m.SetPodStatus(pod, getRandomPodStatus())
-	verifyActions(t, m, []core.Action{getAction(), updateAction()})
+	m.testSyncBatch()
+	verifyActions(t, client, []core.Action{getAction, updateAction})
+	client.ClearActions()
 
-	t.Logf("Pod is terminated, but still running.")
+	// Pod is terminated, but still running.
 	pod.DeletionTimestamp = new(metav1.Time)
 	m.SetPodStatus(pod, getRandomPodStatus())
-	verifyActions(t, m, []core.Action{getAction(), updateAction()})
+	m.testSyncBatch()
+	verifyActions(t, client, []core.Action{getAction, updateAction})
+	client.ClearActions()
 
-	t.Logf("Pod is terminated successfully.")
+	// Pod is terminated successfully.
 	pod.Status.ContainerStatuses[0].State.Running = nil
 	pod.Status.ContainerStatuses[0].State.Terminated = &v1.ContainerStateTerminated{}
 	m.SetPodStatus(pod, getRandomPodStatus())
-	verifyActions(t, m, []core.Action{getAction(), updateAction()})
+	m.testSyncBatch()
+	verifyActions(t, client, []core.Action{getAction, updateAction})
+	client.ClearActions()
 
-	t.Logf("Error case.")
-	ret = nil
+	// Error case.
 	err = fmt.Errorf("intentional test error")
 	m.SetPodStatus(pod, getRandomPodStatus())
-	verifyActions(t, m, []core.Action{getAction()})
+	m.testSyncBatch()
+	verifyActions(t, client, []core.Action{getAction})
+	client.ClearActions()
 }
 
 func TestStaleUpdates(t *testing.T) {
@@ -388,13 +410,21 @@ func TestStaleUpdates(t *testing.T) {
 	m.SetPodStatus(pod, status)
 	status.Message = "second version bump"
 	m.SetPodStatus(pod, status)
-
-	t.Logf("sync batch before syncPods pushes latest status, so we should see three statuses in the channel, but only one update")
-	m.syncBatch()
 	verifyUpdates(t, m, 3)
-	verifyActions(t, m, []core.Action{getAction(), updateAction()})
-	t.Logf("Nothing left in the channel to sync")
-	verifyActions(t, m, []core.Action{})
+
+	t.Logf("First sync pushes latest status.")
+	m.testSyncBatch()
+	verifyActions(t, m.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+		core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}},
+	})
+	client.ClearActions()
+
+	for i := 0; i < 2; i++ {
+		t.Logf("Next 2 syncs should be ignored (%d).", i)
+		m.testSyncBatch()
+		verifyActions(t, m.kubeClient, []core.Action{})
+	}
 
 	t.Log("Unchanged status should not send an update.")
 	m.SetPodStatus(pod, status)
@@ -404,10 +434,13 @@ func TestStaleUpdates(t *testing.T) {
 	m.apiStatusVersions[pod.UID] = m.apiStatusVersions[pod.UID] - 1
 
 	m.SetPodStatus(pod, status)
-	m.syncBatch()
-	verifyActions(t, m, []core.Action{getAction(), updateAction()})
+	m.testSyncBatch()
+	verifyActions(t, m.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+		core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}},
+	})
 
-	t.Logf("Nothing stuck in the pipe.")
+	// Nothing stuck in the pipe.
 	verifyUpdates(t, m, 0)
 }
 
@@ -494,7 +527,7 @@ func TestStaticPod(t *testing.T) {
 	client := fake.NewSimpleClientset(mirrorPod)
 	m := newTestManager(client)
 
-	t.Logf("Create the static pod")
+	// Create the static pod
 	m.podManager.AddPod(staticPod)
 	assert.True(t, kubepod.IsStaticPod(staticPod), "SetUp error: staticPod")
 
@@ -503,57 +536,69 @@ func TestStaticPod(t *testing.T) {
 	status.StartTime = &now
 	m.SetPodStatus(staticPod, status)
 
-	t.Logf("Should be able to get the static pod status from status manager")
+	// Should be able to get the static pod status from status manager
 	retrievedStatus := expectPodStatus(t, m, staticPod)
 	normalizeStatus(staticPod, &status)
 	assert.True(t, isStatusEqual(&status, &retrievedStatus), "Expected: %+v, Got: %+v", status, retrievedStatus)
 
-	t.Logf("Should not sync pod in syncBatch because there is no corresponding mirror pod for the static pod.")
-	m.syncBatch()
-	assert.Equal(t, len(m.kubeClient.(*fake.Clientset).Actions()), 0, "Expected no updates after syncBatch, got %+v", m.kubeClient.(*fake.Clientset).Actions())
+	// Should not sync pod because there is no corresponding mirror pod for the static pod.
+	m.testSyncBatch()
+	verifyActions(t, m.kubeClient, []core.Action{})
+	client.ClearActions()
 
-	t.Logf("Create the mirror pod")
+	// Create the mirror pod
 	m.podManager.AddPod(mirrorPod)
 	assert.True(t, kubepod.IsMirrorPod(mirrorPod), "SetUp error: mirrorPod")
 	assert.Equal(t, m.podManager.TranslatePodUID(mirrorPod.UID), staticPod.UID)
 
-	t.Logf("Should be able to get the mirror pod status from status manager")
+	// Should be able to get the mirror pod status from status manager
 	retrievedStatus, _ = m.GetPodStatus(mirrorPod.UID)
 	assert.True(t, isStatusEqual(&status, &retrievedStatus), "Expected: %+v, Got: %+v", status, retrievedStatus)
 
-	t.Logf("Should sync pod because the corresponding mirror pod is created")
-	verifyActions(t, m, []core.Action{getAction(), updateAction()})
-
-	t.Logf("syncBatch should not sync any pods because nothing is changed.")
+	// Should sync pod because the corresponding mirror pod is created
 	m.testSyncBatch()
-	verifyActions(t, m, []core.Action{})
+	verifyActions(t, m.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+		core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}},
+	})
+	updateAction := client.Actions()[1].(core.UpdateActionImpl)
+	updatedPod := updateAction.Object.(*v1.Pod)
+	assert.Equal(t, mirrorPod.UID, updatedPod.UID, "Expected mirrorPod (%q), but got %q", mirrorPod.UID, updatedPod.UID)
+	assert.True(t, isStatusEqual(&status, &updatedPod.Status), "Expected: %+v, Got: %+v", status, updatedPod.Status)
+	client.ClearActions()
 
-	t.Logf("Change mirror pod identity.")
+	// Should not sync pod because nothing is changed.
+	m.testSyncBatch()
+	verifyActions(t, m.kubeClient, []core.Action{})
+
+	// Change mirror pod identity.
 	m.podManager.DeletePod(mirrorPod)
 	mirrorPod.UID = "new-mirror-pod"
 	mirrorPod.Status = v1.PodStatus{}
 	m.podManager.AddPod(mirrorPod)
 
-	t.Logf("Should not update to mirror pod, because UID has changed.")
-	m.syncBatch()
-	verifyActions(t, m, []core.Action{getAction()})
+	// Should not update to mirror pod, because UID has changed.
+	m.testSyncBatch()
+	verifyActions(t, m.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+	})
 }
 
 func TestTerminatePod(t *testing.T) {
 	syncer := newTestManager(&fake.Clientset{})
 	testPod := getTestPod()
-	t.Logf("update the pod's status to Failed.  TerminatePod should preserve this status update.")
+	// update the pod's status to Failed.  TerminatePod should preserve this status update.
 	firstStatus := getRandomPodStatus()
 	firstStatus.Phase = v1.PodFailed
 	syncer.SetPodStatus(testPod, firstStatus)
 
-	t.Logf("set the testPod to a pod with Phase running, to simulate a stale pod")
+	// set the testPod to a pod with Phase running, to simulate a stale pod
 	testPod.Status = getRandomPodStatus()
 	testPod.Status.Phase = v1.PodRunning
 
 	syncer.TerminatePod(testPod)
 
-	t.Logf("we expect the container statuses to have changed to terminated")
+	// we expect the container statuses to have changed to terminated
 	newStatus := expectPodStatus(t, syncer, testPod)
 	for i := range newStatus.ContainerStatuses {
 		assert.False(t, newStatus.ContainerStatuses[i].State.Terminated == nil, "expected containers to be terminated")
@@ -562,7 +607,7 @@ func TestTerminatePod(t *testing.T) {
 		assert.False(t, newStatus.InitContainerStatuses[i].State.Terminated == nil, "expected init containers to be terminated")
 	}
 
-	t.Logf("we expect the previous status update to be preserved.")
+	// we expect the previous status update to be preserved.
 	assert.Equal(t, newStatus.Phase, firstStatus.Phase)
 	assert.Equal(t, newStatus.Message, firstStatus.Message)
 }
@@ -667,10 +712,10 @@ func TestSyncBatchCleanupVersions(t *testing.T) {
 		kubetypes.ConfigMirrorAnnotationKey: "mirror",
 	}
 
-	t.Logf("Orphaned pods should be removed.")
+	// Orphaned pods should be removed.
 	m.apiStatusVersions[testPod.UID] = 100
 	m.apiStatusVersions[mirrorPod.UID] = 200
-	m.syncBatch()
+	m.testSyncBatch()
 	if _, ok := m.apiStatusVersions[testPod.UID]; ok {
 		t.Errorf("Should have cleared status for testPod")
 	}
@@ -678,7 +723,7 @@ func TestSyncBatchCleanupVersions(t *testing.T) {
 		t.Errorf("Should have cleared status for mirrorPod")
 	}
 
-	t.Logf("Non-orphaned pods should not be removed.")
+	// Non-orphaned pods should not be removed.
 	m.SetPodStatus(testPod, getRandomPodStatus())
 	m.podManager.AddPod(mirrorPod)
 	staticPod := mirrorPod
@@ -701,9 +746,8 @@ func TestReconcilePodStatus(t *testing.T) {
 	client := fake.NewSimpleClientset(testPod)
 	syncer := newTestManager(client)
 	syncer.SetPodStatus(testPod, getRandomPodStatus())
-	t.Logf("Call syncBatch directly to test reconcile")
+	// Call syncBatch directly to test reconcile
 	syncer.syncBatch() // The apiStatusVersions should be set now
-	client.ClearActions()
 
 	podStatus, ok := syncer.GetPodStatus(testPod.UID)
 	if !ok {
@@ -711,36 +755,42 @@ func TestReconcilePodStatus(t *testing.T) {
 	}
 	testPod.Status = podStatus
 
-	t.Logf("If the pod status is the same, a reconciliation is not needed and syncBatch should do nothing")
+	// If the pod status is the same, a reconciliation is not needed,
+	// syncBatch should do nothing
 	syncer.podManager.UpdatePod(testPod)
 	if syncer.needsReconcile(testPod.UID, podStatus) {
 		t.Errorf("Pod status is the same, a reconciliation is not needed")
 	}
+	client.ClearActions()
 	syncer.syncBatch()
-	verifyActions(t, syncer, []core.Action{})
+	verifyActions(t, client, []core.Action{})
 
 	// If the pod status is the same, only the timestamp is in Rfc3339 format (lower precision without nanosecond),
 	// a reconciliation is not needed, syncBatch should do nothing.
 	// The StartTime should have been set in SetPodStatus().
 	// TODO(random-liu): Remove this later when api becomes consistent for timestamp.
-	t.Logf("Syncbatch should do nothing, as a reconciliation is not required")
 	normalizedStartTime := testPod.Status.StartTime.Rfc3339Copy()
 	testPod.Status.StartTime = &normalizedStartTime
 	syncer.podManager.UpdatePod(testPod)
 	if syncer.needsReconcile(testPod.UID, podStatus) {
 		t.Errorf("Pod status only differs for timestamp format, a reconciliation is not needed")
 	}
+	client.ClearActions()
 	syncer.syncBatch()
-	verifyActions(t, syncer, []core.Action{})
+	verifyActions(t, client, []core.Action{})
 
-	t.Logf("If the pod status is different, a reconciliation is needed, syncBatch should trigger an update")
+	// If the pod status is different, a reconciliation is needed, syncBatch should trigger an update
 	testPod.Status = getRandomPodStatus()
 	syncer.podManager.UpdatePod(testPod)
 	if !syncer.needsReconcile(testPod.UID, podStatus) {
 		t.Errorf("Pod status is different, a reconciliation is needed")
 	}
+	client.ClearActions()
 	syncer.syncBatch()
-	verifyActions(t, syncer, []core.Action{getAction(), updateAction()})
+	verifyActions(t, client, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+		core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}},
+	})
 }
 
 func expectPodStatus(t *testing.T, m *manager, pod *v1.Pod) v1.PodStatus {
@@ -753,7 +803,7 @@ func expectPodStatus(t *testing.T, m *manager, pod *v1.Pod) v1.PodStatus {
 
 func TestDeletePods(t *testing.T) {
 	pod := getTestPod()
-	t.Logf("Set the deletion timestamp.")
+	// Set the deletion timestamp.
 	pod.DeletionTimestamp = new(metav1.Time)
 	client := fake.NewSimpleClientset(pod)
 	m := newTestManager(client)
@@ -764,8 +814,13 @@ func TestDeletePods(t *testing.T) {
 	status.StartTime = &now
 	m.SetPodStatus(pod, status)
 
-	t.Logf("Expect to see a delete action.")
-	verifyActions(t, m, []core.Action{getAction(), updateAction(), deleteAction()})
+	m.testSyncBatch()
+	// Expect to see an delete action.
+	verifyActions(t, m.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+		core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}},
+		core.DeleteActionImpl{ActionImpl: core.ActionImpl{Verb: "delete", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+	})
 }
 
 func TestDoNotDeleteMirrorPods(t *testing.T) {
@@ -777,13 +832,13 @@ func TestDoNotDeleteMirrorPods(t *testing.T) {
 		kubetypes.ConfigSourceAnnotationKey: "api",
 		kubetypes.ConfigMirrorAnnotationKey: "mirror",
 	}
-	t.Logf("Set the deletion timestamp.")
+	// Set the deletion timestamp.
 	mirrorPod.DeletionTimestamp = new(metav1.Time)
 	client := fake.NewSimpleClientset(mirrorPod)
 	m := newTestManager(client)
 	m.podManager.AddPod(staticPod)
 	m.podManager.AddPod(mirrorPod)
-	t.Logf("Verify setup.")
+	// Verify setup.
 	assert.True(t, kubepod.IsStaticPod(staticPod), "SetUp error: staticPod")
 	assert.True(t, kubepod.IsMirrorPod(mirrorPod), "SetUp error: mirrorPod")
 	assert.Equal(t, m.podManager.TranslatePodUID(mirrorPod.UID), staticPod.UID)
@@ -793,18 +848,10 @@ func TestDoNotDeleteMirrorPods(t *testing.T) {
 	status.StartTime = &now
 	m.SetPodStatus(staticPod, status)
 
-	t.Logf("Expect not to see a delete action.")
-	verifyActions(t, m, []core.Action{getAction(), updateAction()})
-}
-
-func getAction() core.GetAction {
-	return core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}}
-}
-
-func updateAction() core.UpdateAction {
-	return core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}}
-}
-
-func deleteAction() core.DeleteAction {
-	return core.DeleteActionImpl{ActionImpl: core.ActionImpl{Verb: "delete", Resource: schema.GroupVersionResource{Resource: "pods"}}}
+	m.testSyncBatch()
+	// Expect not to see an delete action.
+	verifyActions(t, m.kubeClient, []core.Action{
+		core.GetActionImpl{ActionImpl: core.ActionImpl{Verb: "get", Resource: schema.GroupVersionResource{Resource: "pods"}}},
+		core.UpdateActionImpl{ActionImpl: core.ActionImpl{Verb: "update", Resource: schema.GroupVersionResource{Resource: "pods"}, Subresource: "status"}},
+	})
 }

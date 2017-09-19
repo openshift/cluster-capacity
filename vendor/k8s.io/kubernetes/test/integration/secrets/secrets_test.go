@@ -1,3 +1,5 @@
+// +build integration,!no-etcd
+
 /*
 Copyright 2015 The Kubernetes Authors.
 
@@ -38,8 +40,8 @@ func deleteSecretOrErrorf(t *testing.T, c clientset.Interface, ns, name string) 
 
 // TestSecrets tests apiserver-side behavior of creation of secret objects and their use by pods.
 func TestSecrets(t *testing.T) {
-	_, s, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, s := framework.RunAMaster(nil)
+	defer s.Close()
 
 	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
 

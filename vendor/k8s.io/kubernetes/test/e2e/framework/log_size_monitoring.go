@@ -104,10 +104,6 @@ func (s *LogsSizeDataSummary) PrintJSON() string {
 	return PrettyPrintJSON(*s)
 }
 
-func (s *LogsSizeDataSummary) SummaryKind() string {
-	return "LogSizeSummary"
-}
-
 type LogsSizeData struct {
 	data LogSizeDataTimeseries
 	lock sync.Mutex
@@ -249,13 +245,9 @@ func (g *LogSizeGatherer) Work() bool {
 	)
 	if err != nil {
 		Logf("Error while trying to SSH to %v, skipping probe. Error: %v", workItem.ip, err)
-		// In case of repeated error give up.
-		if workItem.backoffMultiplier >= 128 {
-			Logf("Failed to ssh to a node %v multiple times in a row. Giving up.", workItem.ip)
-			g.wg.Done()
-			return false
+		if workItem.backoffMultiplier < 128 {
+			workItem.backoffMultiplier *= 2
 		}
-		workItem.backoffMultiplier *= 2
 		go g.pushWorkItem(workItem)
 		return true
 	}

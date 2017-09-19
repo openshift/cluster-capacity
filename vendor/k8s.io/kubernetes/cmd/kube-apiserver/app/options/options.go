@@ -44,10 +44,9 @@ type ServerRunOptions struct {
 	GenericServerRunOptions *genericoptions.ServerRunOptions
 	Etcd                    *genericoptions.EtcdOptions
 	SecureServing           *genericoptions.SecureServingOptions
-	InsecureServing         *kubeoptions.InsecureServingOptions
-	Audit                   *genericoptions.AuditOptions
+	InsecureServing         *genericoptions.ServingOptions
+	Audit                   *genericoptions.AuditLogOptions
 	Features                *genericoptions.FeatureOptions
-	Admission               *genericoptions.AdmissionOptions
 	Authentication          *kubeoptions.BuiltInAuthenticationOptions
 	Authorization           *kubeoptions.BuiltInAuthorizationOptions
 	CloudProvider           *kubeoptions.CloudProviderOptions
@@ -55,7 +54,6 @@ type ServerRunOptions struct {
 	APIEnablement           *kubeoptions.APIEnablementOptions
 
 	AllowPrivileged           bool
-	EnableLogsHandler         bool
 	EventTTL                  time.Duration
 	KubeletConfig             kubeletclient.KubeletClientConfig
 	KubernetesServiceNodePort int
@@ -65,11 +63,6 @@ type ServerRunOptions struct {
 	ServiceNodePortRange      utilnet.PortRange
 	SSHKeyfile                string
 	SSHUser                   string
-
-	ProxyClientCertFile string
-	ProxyClientKeyFile  string
-
-	EnableAggregatorRouting bool
 }
 
 // NewServerRunOptions creates a new ServerRunOptions object with default parameters
@@ -78,19 +71,17 @@ func NewServerRunOptions() *ServerRunOptions {
 		GenericServerRunOptions: genericoptions.NewServerRunOptions(),
 		Etcd:                 genericoptions.NewEtcdOptions(storagebackend.NewDefaultConfig(kubeoptions.DefaultEtcdPathPrefix, api.Scheme, nil)),
 		SecureServing:        kubeoptions.NewSecureServingOptions(),
-		InsecureServing:      kubeoptions.NewInsecureServingOptions(),
-		Audit:                genericoptions.NewAuditOptions(),
+		InsecureServing:      genericoptions.NewInsecureServingOptions(),
+		Audit:                genericoptions.NewAuditLogOptions(),
 		Features:             genericoptions.NewFeatureOptions(),
-		Admission:            genericoptions.NewAdmissionOptions(),
 		Authentication:       kubeoptions.NewBuiltInAuthenticationOptions().WithAll(),
 		Authorization:        kubeoptions.NewBuiltInAuthorizationOptions(),
 		CloudProvider:        kubeoptions.NewCloudProviderOptions(),
 		StorageSerialization: kubeoptions.NewStorageSerializationOptions(),
 		APIEnablement:        kubeoptions.NewAPIEnablementOptions(),
 
-		EnableLogsHandler: true,
-		EventTTL:          1 * time.Hour,
-		MasterCount:       1,
+		EventTTL:    1 * time.Hour,
+		MasterCount: 1,
 		KubeletConfig: kubeletclient.KubeletClientConfig{
 			Port:         ports.KubeletPort,
 			ReadOnlyPort: ports.KubeletReadOnlyPort,
@@ -105,6 +96,8 @@ func NewServerRunOptions() *ServerRunOptions {
 				// external, preferring DNS if reported
 				string(api.NodeExternalDNS),
 				string(api.NodeExternalIP),
+
+				string(api.NodeLegacyHostIP),
 			},
 			EnableHttps: true,
 			HTTPTimeout: time.Duration(5) * time.Second,
@@ -113,8 +106,6 @@ func NewServerRunOptions() *ServerRunOptions {
 	}
 	// Overwrite the default for storage data format.
 	s.Etcd.DefaultStorageMediaType = "application/vnd.kubernetes.protobuf"
-	// Set the default for admission plugins names
-	s.Admission.PluginNames = []string{"AlwaysAdmit"}
 	return &s
 }
 
@@ -134,19 +125,15 @@ func (s *ServerRunOptions) AddFlags(fs *pflag.FlagSet) {
 	s.CloudProvider.AddFlags(fs)
 	s.StorageSerialization.AddFlags(fs)
 	s.APIEnablement.AddFlags(fs)
-	s.Admission.AddFlags(fs)
 
 	// Note: the weird ""+ in below lines seems to be the only way to get gofmt to
 	// arrange these text blocks sensibly. Grrr.
 
 	fs.DurationVar(&s.EventTTL, "event-ttl", s.EventTTL,
-		"Amount of time to retain events.")
+		"Amount of time to retain events. Default is 1h.")
 
 	fs.BoolVar(&s.AllowPrivileged, "allow-privileged", s.AllowPrivileged,
 		"If true, allow privileged containers.")
-
-	fs.BoolVar(&s.EnableLogsHandler, "enable-logs-handler", s.EnableLogsHandler,
-		"If true, install a /logs handler for the apiserver logs.")
 
 	fs.StringVar(&s.SSHUser, "ssh-user", s.SSHUser,
 		"If non-empty, use secure SSH proxy to the nodes, using this user name")
@@ -213,21 +200,4 @@ func (s *ServerRunOptions) AddFlags(fs *pflag.FlagSet) {
 		"If true, server will do its best to fix the update request to pass the validation, "+
 		"e.g., setting empty UID in update request to its existing value. This flag can be turned off "+
 		"after we fix all the clients that send malformed updates.")
-
-	fs.StringVar(&s.ProxyClientCertFile, "proxy-client-cert-file", s.ProxyClientCertFile, ""+
-		"Client certificate used to prove the identity of the aggregator or kube-apiserver "+
-		"when it must call out during a request. This includes proxying requests to a user "+
-		"api-server and calling out to webhook admission plugins. It is expected that this "+
-		"cert includes a signature from the CA in the --requestheader-client-ca-file flag. "+
-		"That CA is published in the 'extension-apiserver-authentication' configmap in "+
-		"the kube-system namespace. Components recieving calls from kube-aggregator should "+
-		"use that CA to perform their half of the mutual TLS verification.")
-	fs.StringVar(&s.ProxyClientKeyFile, "proxy-client-key-file", s.ProxyClientKeyFile, ""+
-		"Private key for the client certificate used to prove the identity of the aggregator or kube-apiserver "+
-		"when it must call out during a request. This includes proxying requests to a user "+
-		"api-server and calling out to webhook admission plugins.")
-
-	fs.BoolVar(&s.EnableAggregatorRouting, "enable-aggregator-routing", s.EnableAggregatorRouting,
-		"Turns on aggregator routing requests to endoints IP rather than cluster IP.")
-
 }

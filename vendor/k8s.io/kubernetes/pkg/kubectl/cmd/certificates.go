@@ -162,12 +162,12 @@ func (options *CertificateOptions) RunCertificateDeny(f cmdutil.Factory, out io.
 
 func (options *CertificateOptions) modifyCertificateCondition(f cmdutil.Factory, out io.Writer, modify func(csr *certificates.CertificateSigningRequest) (*certificates.CertificateSigningRequest, string)) error {
 	var found int
-	mapper, _ := f.Object()
+	mapper, typer := f.Object()
 	c, err := f.ClientSet()
 	if err != nil {
 		return err
 	}
-	r := f.NewBuilder(true).
+	r := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
 		ContinueOnError().
 		FilenameParam(false, &options.FilenameOptions).
 		ResourceNames("certificatesigningrequest", options.csrNames...).

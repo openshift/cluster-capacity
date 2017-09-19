@@ -20,8 +20,4 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        - name: MY_HOST_IP
-          valueFrom:
-            fieldRef:
-               fieldPath: status.hostIP
   restartPolicy: Never

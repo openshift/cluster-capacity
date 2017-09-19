@@ -1,14 +1,11 @@
 # Calico Policy Controller
 ==============
 
-Calico is an implementation of the Kubernetes network policy API.  The provided manifests install:
+Calico Policy Controller is an implementation of the Kubernetes network policy API.
 
-- A DaemonSet which runs Calico on each node in the cluster.
-- A Deployment which installs the Calico Typha agent.
-- A Service for the Calico Typha agent.
+Learn more at:
+- https://github.com/projectcalico/k8s-policy
+- http://kubernetes.io/docs/user-guide/networkpolicies/
 
-### Learn More
-
-Learn more about Calico at http://docs.projectcalico.org
 
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/cluster/addons/calico-policy-controller/README.md?pixel)]()

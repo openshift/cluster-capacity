@@ -42,8 +42,7 @@ const defaultHttpGetAttempts int = 3
 // from the command line and converting them to a list of resources to iterate
 // over using the Visitor interface.
 type Builder struct {
-	mapper           *Mapper
-	categoryExpander CategoryExpander
+	mapper *Mapper
 
 	errs []error
 
@@ -84,8 +83,8 @@ var missingResourceError = fmt.Errorf(`You must provide one or more resources by
 Example resource specifications include:
    '-f rsrc.yaml'
    '--filename=rsrc.json'
-   '<resource> <name>'
-   '<resource>'`)
+   'pods my-pod'
+   'services'`)
 
 // TODO: expand this to include other errors.
 func IsUsageError(err error) bool {
@@ -106,11 +105,10 @@ type resourceTuple struct {
 }
 
 // NewBuilder creates a builder that operates on generic objects.
-func NewBuilder(mapper meta.RESTMapper, categoryExpander CategoryExpander, typer runtime.ObjectTyper, clientMapper ClientMapper, decoder runtime.Decoder) *Builder {
+func NewBuilder(mapper meta.RESTMapper, typer runtime.ObjectTyper, clientMapper ClientMapper, decoder runtime.Decoder) *Builder {
 	return &Builder{
-		mapper:           &Mapper{typer, mapper, clientMapper, decoder},
-		categoryExpander: categoryExpander,
-		requireObject:    true,
+		mapper:        &Mapper{typer, mapper, clientMapper, decoder},
+		requireObject: true,
 	}
 }
 
@@ -373,16 +371,8 @@ func (b *Builder) ResourceTypeOrNameArgs(allowEmptySelector bool, args ...string
 func (b *Builder) ReplaceAliases(input string) string {
 	replaced := []string{}
 	for _, arg := range strings.Split(input, ",") {
-		if resources, ok := b.categoryExpander.Expand(arg); ok {
-			asStrings := []string{}
-			for _, resource := range resources {
-				if len(resource.Group) == 0 {
-					asStrings = append(asStrings, resource.Resource)
-					continue
-				}
-				asStrings = append(asStrings, resource.Resource+"."+resource.Group)
-			}
-			arg = strings.Join(asStrings, ",")
+		if aliases, ok := b.mapper.AliasesForResource(arg); ok {
+			arg = strings.Join(aliases, ",")
 		}
 		replaced = append(replaced, arg)
 	}

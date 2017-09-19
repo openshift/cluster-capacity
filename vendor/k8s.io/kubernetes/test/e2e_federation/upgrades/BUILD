@@ -9,18 +9,9 @@ load(
 
 go_library(
     name = "go_default_library",
-    srcs = [
-        "simple.go",
-        "upgrade.go",
-    ],
+    srcs = ["upgrade.go"],
     tags = ["automanaged"],
-    deps = [
-        "//federation/pkg/federatedtypes:go_default_library",
-        "//federation/pkg/federatedtypes/crudtester:go_default_library",
-        "//test/e2e_federation/framework:go_default_library",
-        "//vendor/github.com/onsi/ginkgo:go_default_library",
-        "//vendor/k8s.io/apimachinery/pkg/runtime:go_default_library",
-    ],
+    deps = ["//test/e2e_federation/framework:go_default_library"],
 )
 
 filegroup(

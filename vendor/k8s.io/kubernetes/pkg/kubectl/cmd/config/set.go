@@ -60,7 +60,10 @@ func NewCmdConfigSet(out io.Writer, configAccess clientcmd.ConfigAccess) *cobra.
 		Short: i18n.T("Sets an individual value in a kubeconfig file"),
 		Long:  set_long,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(options.complete(cmd))
+			if !options.complete(cmd) {
+				return
+			}
+
 			cmdutil.CheckErr(options.run())
 			fmt.Fprintf(out, "Property %q set.\n", options.propertyName)
 		},
@@ -103,16 +106,16 @@ func (o setOptions) run() error {
 	return nil
 }
 
-func (o *setOptions) complete(cmd *cobra.Command) error {
+func (o *setOptions) complete(cmd *cobra.Command) bool {
 	endingArgs := cmd.Flags().Args()
 	if len(endingArgs) != 2 {
 		cmd.Help()
-		return fmt.Errorf("Unexpected args: %v", endingArgs)
+		return false
 	}
 
 	o.propertyValue = endingArgs[1]
 	o.propertyName = endingArgs[0]
-	return nil
+	return true
 }
 
 func (o setOptions) validate() error {

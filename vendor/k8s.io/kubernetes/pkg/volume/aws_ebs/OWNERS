@@ -1,13 +1,18 @@
 approvers:
-- gnufied
-- jingxu97
 - jsafrane
 - justinsb
-reviewers:
 - chrislovecnm
-- gnufied
 - jingxu97
+reviewers:
+- thockin
+- smarterclayton
+- deads2k
+- pmorie
+- saad-ali
 - justinsb
 - jsafrane
 - rootfs
-- saad-ali
+- jingxu97
+- chakri-nelluri
+- screeley44
+- gnufied

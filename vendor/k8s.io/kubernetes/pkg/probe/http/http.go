@@ -32,12 +32,7 @@ import (
 
 func New() HTTPProber {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
-	return NewWithTLSConfig(tlsConfig)
-}
-
-// NewWithTLSConfig takes tls config as parameter.
-func NewWithTLSConfig(config *tls.Config) HTTPProber {
-	transport := utilnet.SetTransportDefaults(&http.Transport{TLSClientConfig: config, DisableKeepAlives: true})
+	transport := utilnet.SetTransportDefaults(&http.Transport{TLSClientConfig: tlsConfig, DisableKeepAlives: true})
 	return httpProber{transport}
 }
 

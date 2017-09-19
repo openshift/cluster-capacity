@@ -148,14 +148,12 @@ func (s *fileStore) Current() (*tls.Certificate, error) {
 		return loadX509KeyPair(c, k)
 	}
 
-	noKeyErr := NoCertKeyError(
-		fmt.Sprintf("no cert/key files read at %q, (%q, %q) or (%q, %q)",
-			pairFile,
-			s.certFile,
-			s.keyFile,
-			s.certDirectory,
-			s.keyDirectory))
-	return nil, &noKeyErr
+	return nil, fmt.Errorf("no cert/key files read at %q, (%q, %q) or (%q, %q)",
+		pairFile,
+		s.certFile,
+		s.keyFile,
+		s.certDirectory,
+		s.keyDirectory)
 }
 
 func loadFile(pairFile string) (*tls.Certificate, error) {
@@ -195,9 +193,6 @@ func (s *fileStore) Update(certData, keyData []byte) (*tls.Certificate, error) {
 	ts := time.Now().Format("2006-01-02-15-04-05")
 	pemFilename := s.filename(ts)
 
-	if err := os.MkdirAll(s.certDirectory, 0755); err != nil {
-		return nil, fmt.Errorf("could not create directory %q to store certificates: %v", s.certDirectory, err)
-	}
 	certPath := filepath.Join(s.certDirectory, pemFilename)
 
 	f, err := os.OpenFile(certPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0600)

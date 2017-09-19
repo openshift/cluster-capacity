@@ -135,10 +135,6 @@ var ResourcesShortcutStatic = []ResourceShortcuts{
 		LongForm:  schema.GroupResource{Group: "extensions", Resource: "ingresses"},
 	},
 	{
-		ShortForm: schema.GroupResource{Group: "extensions", Resource: "netpol"},
-		LongForm:  schema.GroupResource{Group: "extensions", Resource: "networkpolicies"},
-	},
-	{
 		ShortForm: schema.GroupResource{Group: "extensions", Resource: "psp"},
 		LongForm:  schema.GroupResource{Group: "extensions", Resource: "podSecurityPolicies"},
 	},

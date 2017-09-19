@@ -157,7 +157,6 @@ func (c *portForwardCommand) Stop() {
 	framework.TryKill(c.cmd)
 }
 
-// runPortForward runs port-forward, warning, this may need root functionality on some systems.
 func runPortForward(ns, podName string, port int) *portForwardCommand {
 	cmd := framework.KubectlCmd("port-forward", fmt.Sprintf("--namespace=%v", ns), podName, fmt.Sprintf(":%d", port))
 	// This is somewhat ugly but is the only way to retrieve the port that was picked
@@ -206,7 +205,7 @@ func runPortForward(ns, podName string, port int) *portForwardCommand {
 }
 
 func doTestConnectSendDisconnect(bindAddress string, f *framework.Framework) {
-	By("Creating the target pod")
+	By("creating the target pod")
 	pod := pfPod("", "10", "10", "100", fmt.Sprintf("%s", bindAddress))
 	if _, err := f.ClientSet.Core().Pods(f.Namespace.Name).Create(pod); err != nil {
 		framework.Failf("Couldn't create pod: %v", err)
@@ -262,7 +261,7 @@ func doTestConnectSendDisconnect(bindAddress string, f *framework.Framework) {
 }
 
 func doTestMustConnectSendNothing(bindAddress string, f *framework.Framework) {
-	By("Creating the target pod")
+	By("creating the target pod")
 	pod := pfPod("abc", "1", "1", "1", fmt.Sprintf("%s", bindAddress))
 	if _, err := f.ClientSet.Core().Pods(f.Namespace.Name).Create(pod); err != nil {
 		framework.Failf("Couldn't create pod: %v", err)
@@ -307,7 +306,7 @@ func doTestMustConnectSendNothing(bindAddress string, f *framework.Framework) {
 }
 
 func doTestMustConnectSendDisconnect(bindAddress string, f *framework.Framework) {
-	By("Creating the target pod")
+	By("creating the target pod")
 	pod := pfPod("abc", "10", "10", "100", fmt.Sprintf("%s", bindAddress))
 	if _, err := f.ClientSet.Core().Pods(f.Namespace.Name).Create(pod); err != nil {
 		framework.Failf("Couldn't create pod: %v", err)
@@ -377,7 +376,7 @@ func doTestOverWebSockets(bindAddress string, f *framework.Framework) {
 	config, err := framework.LoadConfig()
 	Expect(err).NotTo(HaveOccurred(), "unable to get base config")
 
-	By("Creating the pod")
+	By("creating the pod")
 	pod := pfPod("def", "10", "10", "100", fmt.Sprintf("%s", bindAddress))
 	if _, err := f.ClientSet.Core().Pods(f.Namespace.Name).Create(pod); err != nil {
 		framework.Failf("Couldn't create pod: %v", err)
@@ -436,13 +435,13 @@ func doTestOverWebSockets(bindAddress string, f *framework.Framework) {
 		return nil
 	}, time.Minute, 10*time.Second).Should(BeNil())
 
-	By("Sending the expected data to the local port")
+	By("sending the expected data to the local port")
 	err = wsWrite(ws, 0, []byte("def"))
 	if err != nil {
 		framework.Failf("Failed to write to websocket %s: %v", url.String(), err)
 	}
 
-	By("Reading data from the local port")
+	By("reading data from the local port")
 	buf := bytes.Buffer{}
 	expectedData := bytes.Repeat([]byte("x"), 100)
 	Eventually(func() error {
@@ -460,7 +459,7 @@ func doTestOverWebSockets(bindAddress string, f *framework.Framework) {
 		return nil
 	}, time.Minute, 10*time.Second).Should(BeNil())
 
-	By("Verifying logs")
+	By("verifying logs")
 	logOutput, err := framework.GetPodLogs(f.ClientSet, f.Namespace.Name, pod.Name, "portforwardtester")
 	if err != nil {
 		framework.Failf("Error retrieving pod logs: %v", err)
@@ -474,16 +473,16 @@ var _ = framework.KubeDescribe("Port forwarding", func() {
 
 	framework.KubeDescribe("With a server listening on 0.0.0.0", func() {
 		framework.KubeDescribe("that expects a client request", func() {
-			It("should support a client that connects, sends NO DATA, and disconnects", func() {
+			It("should support a client that connects, sends no data, and disconnects", func() {
 				doTestMustConnectSendNothing("0.0.0.0", f)
 			})
-			It("should support a client that connects, sends DATA, and disconnects", func() {
+			It("should support a client that connects, sends data, and disconnects", func() {
 				doTestMustConnectSendDisconnect("0.0.0.0", f)
 			})
 		})
 
-		framework.KubeDescribe("that expects NO client request", func() {
-			It("should support a client that connects, sends DATA, and disconnects", func() {
+		framework.KubeDescribe("that expects no client request", func() {
+			It("should support a client that connects, sends data, and disconnects", func() {
 				doTestConnectSendDisconnect("0.0.0.0", f)
 			})
 		})
@@ -493,19 +492,18 @@ var _ = framework.KubeDescribe("Port forwarding", func() {
 		})
 	})
 
-	// kubectl port-forward may need elevated privileges to do its job.
 	framework.KubeDescribe("With a server listening on localhost", func() {
 		framework.KubeDescribe("that expects a client request", func() {
-			It("should support a client that connects, sends NO DATA, and disconnects", func() {
+			It("should support a client that connects, sends no data, and disconnects [Conformance]", func() {
 				doTestMustConnectSendNothing("localhost", f)
 			})
-			It("should support a client that connects, sends DATA, and disconnects", func() {
+			It("should support a client that connects, sends data, and disconnects [Conformance]", func() {
 				doTestMustConnectSendDisconnect("localhost", f)
 			})
 		})
 
-		framework.KubeDescribe("that expects NO client request", func() {
-			It("should support a client that connects, sends DATA, and disconnects", func() {
+		framework.KubeDescribe("that expects no client request", func() {
+			It("should support a client that connects, sends data, and disconnects [Conformance]", func() {
 				doTestConnectSendDisconnect("localhost", f)
 			})
 		})

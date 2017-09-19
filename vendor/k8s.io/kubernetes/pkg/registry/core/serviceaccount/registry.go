@@ -67,7 +67,7 @@ func (s *storage) GetServiceAccount(ctx genericapirequest.Context, name string, 
 }
 
 func (s *storage) CreateServiceAccount(ctx genericapirequest.Context, serviceAccount *api.ServiceAccount) error {
-	_, err := s.Create(ctx, serviceAccount, false)
+	_, err := s.Create(ctx, serviceAccount)
 	return err
 }
 

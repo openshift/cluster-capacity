@@ -26,11 +26,10 @@ import (
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset/fake"
 	"k8s.io/kubernetes/pkg/controller/node/testutil"
 
+	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clienttesting "k8s.io/client-go/testing"
 )
-
-var timeForControllerToProgress = 500 * time.Millisecond
 
 func createNoExecuteTaint(index int) v1.Taint {
 	return v1.Taint{
@@ -155,7 +154,7 @@ func TestCreatePod(t *testing.T) {
 		controller.taintedNodes = item.taintedNodes
 		controller.PodUpdated(nil, item.pod)
 		// wait a bit
-		time.Sleep(timeForControllerToProgress)
+		time.Sleep(200 * time.Millisecond)
 
 		podDeleted := false
 		for _, action := range fakeClientset.Actions() {
@@ -181,7 +180,7 @@ func TestDeletePod(t *testing.T) {
 	}
 	controller.PodUpdated(testutil.NewPod("pod1", "node1"), nil)
 	// wait a bit to see if nothing will panic
-	time.Sleep(timeForControllerToProgress)
+	time.Sleep(200 * time.Millisecond)
 	close(stopCh)
 }
 
@@ -243,10 +242,10 @@ func TestUpdatePod(t *testing.T) {
 
 		controller.PodUpdated(nil, item.prevPod)
 		fakeClientset.ClearActions()
-		time.Sleep(timeForControllerToProgress)
+		time.Sleep(200 * time.Millisecond)
 		controller.PodUpdated(item.prevPod, item.newPod)
 		// wait a bit
-		time.Sleep(timeForControllerToProgress)
+		time.Sleep(200 * time.Millisecond)
 		if item.additionalSleep > 0 {
 			time.Sleep(item.additionalSleep)
 		}
@@ -305,7 +304,7 @@ func TestCreateNode(t *testing.T) {
 		go controller.Run(stopCh)
 		controller.NodeUpdated(nil, item.node)
 		// wait a bit
-		time.Sleep(timeForControllerToProgress)
+		time.Sleep(200 * time.Millisecond)
 
 		podDeleted := false
 		for _, action := range fakeClientset.Actions() {
@@ -331,7 +330,7 @@ func TestDeleteNode(t *testing.T) {
 	go controller.Run(stopCh)
 	controller.NodeUpdated(testutil.NewNode("node1"), nil)
 	// wait a bit to see if nothing will panic
-	time.Sleep(timeForControllerToProgress)
+	time.Sleep(200 * time.Millisecond)
 	controller.taintedNodesLock.Lock()
 	if _, ok := controller.taintedNodes["node1"]; ok {
 		t.Error("Node should have been deleted from taintedNodes list")
@@ -426,7 +425,7 @@ func TestUpdateNode(t *testing.T) {
 		go controller.Run(stopCh)
 		controller.NodeUpdated(item.oldNode, item.newNode)
 		// wait a bit
-		time.Sleep(timeForControllerToProgress)
+		time.Sleep(200 * time.Millisecond)
 		if item.additionalSleep > 0 {
 			time.Sleep(item.additionalSleep)
 		}
@@ -482,8 +481,6 @@ func TestUpdateNodeWithMultiplePods(t *testing.T) {
 	}
 
 	for _, item := range testCases {
-		t.Logf("Starting testcase %q", item.description)
-
 		stopCh := make(chan struct{})
 		fakeClientset := fake.NewSimpleClientset(&v1.PodList{Items: item.pods})
 		sort.Sort(item.expectedDeleteTimes)
@@ -492,24 +489,19 @@ func TestUpdateNodeWithMultiplePods(t *testing.T) {
 		go controller.Run(stopCh)
 		controller.NodeUpdated(item.oldNode, item.newNode)
 
-		startedAt := time.Now()
+		sleptAlready := time.Duration(0)
 		for i := range item.expectedDeleteTimes {
+			var increment time.Duration
 			if i == 0 || item.expectedDeleteTimes[i-1].timestamp != item.expectedDeleteTimes[i].timestamp {
-				// compute a grace duration to give controller time to process updates. Choose big
-				// enough intervals in the test cases above to avoid flakes.
-				var increment time.Duration
 				if i == len(item.expectedDeleteTimes)-1 || item.expectedDeleteTimes[i+1].timestamp == item.expectedDeleteTimes[i].timestamp {
-					increment = 500 * time.Millisecond
+					increment = 200 * time.Millisecond
 				} else {
 					increment = ((item.expectedDeleteTimes[i+1].timestamp - item.expectedDeleteTimes[i].timestamp) / time.Duration(2))
 				}
-
-				sleepTime := item.expectedDeleteTimes[i].timestamp - time.Since(startedAt) + increment
-				if sleepTime < 0 {
-					sleepTime = 0
-				}
-				t.Logf("Sleeping for %v", sleepTime)
+				sleepTime := item.expectedDeleteTimes[i].timestamp - sleptAlready + increment
+				glog.Infof("Sleeping for %v", sleepTime)
 				time.Sleep(sleepTime)
+				sleptAlready = item.expectedDeleteTimes[i].timestamp + increment
 			}
 
 			for delay, podName := range item.expectedDeleteTimes[i].names {
@@ -517,7 +509,7 @@ func TestUpdateNodeWithMultiplePods(t *testing.T) {
 				for _, action := range fakeClientset.Actions() {
 					deleteAction, ok := action.(clienttesting.DeleteActionImpl)
 					if !ok {
-						t.Logf("Found not-delete action with verb %v. Ignoring.", action.GetVerb())
+						glog.Infof("Found not-delete action with verb %v. Ignoring.", action.GetVerb())
 						continue
 					}
 					if deleteAction.GetResource().Resource != "pods" {
@@ -534,7 +526,7 @@ func TestUpdateNodeWithMultiplePods(t *testing.T) {
 			for _, action := range fakeClientset.Actions() {
 				deleteAction, ok := action.(clienttesting.DeleteActionImpl)
 				if !ok {
-					t.Logf("Found not-delete action with verb %v. Ignoring.", action.GetVerb())
+					glog.Infof("Found not-delete action with verb %v. Ignoring.", action.GetVerb())
 					continue
 				}
 				if deleteAction.GetResource().Resource != "pods" {

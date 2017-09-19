@@ -36,7 +36,6 @@ import (
 	"k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
 )
 
 // This is the primary entrypoint for volume plugins.
@@ -45,16 +44,15 @@ func ProbeVolumePlugins() []volume.VolumePlugin {
 }
 
 type CinderProvider interface {
-	AttachDisk(instanceID, volumeID string) (string, error)
-	DetachDisk(instanceID, volumeID string) error
-	DeleteVolume(volumeID string) error
-	CreateVolume(name string, size int, vtype, availability string, tags *map[string]string) (string, string, error)
-	GetDevicePath(volumeID string) string
+	AttachDisk(instanceID string, diskName string) (string, error)
+	DetachDisk(instanceID string, partialDiskId string) error
+	DeleteVolume(volumeName string) error
+	CreateVolume(name string, size int, vtype, availability string, tags *map[string]string) (volumeName string, err error)
+	GetDevicePath(diskId string) string
 	InstanceID() (string, error)
-	GetAttachmentDiskPath(instanceID, volumeID string) (string, error)
-	OperationPending(diskName string) (bool, string, error)
-	DiskIsAttached(instanceID, volumeID string) (bool, error)
-	DisksAreAttached(instanceID string, volumeIDs []string) (map[string]bool, error)
+	GetAttachmentDiskPath(instanceID string, diskName string) (string, error)
+	DiskIsAttached(diskName, instanceID string) (bool, error)
+	DisksAreAttached(diskNames []string, instanceID string) (map[string]bool, error)
 	ShouldTrustDevicePath() bool
 	Instances() (cloudprovider.Instances, bool)
 }
@@ -241,7 +239,7 @@ type cdManager interface {
 	// Detaches the disk from the kubelet's host machine.
 	DetachDisk(unmounter *cinderVolumeUnmounter) error
 	// Creates a volume
-	CreateVolume(provisioner *cinderVolumeProvisioner) (volumeID string, volumeSizeGB int, labels map[string]string, err error)
+	CreateVolume(provisioner *cinderVolumeProvisioner) (volumeID string, volumeSizeGB int, err error)
 	// Deletes a volume
 	DeleteVolume(deleter *cinderVolumeDeleter) error
 }
@@ -264,6 +262,8 @@ type cinderVolume struct {
 	pdName string
 	// Filesystem type, optional.
 	fsType string
+	// Specifies the partition to mount
+	//partition string
 	// Specifies whether the disk will be attached as read-only.
 	readOnly bool
 	// Utility interface that provides API calls to the provider to attach/detach disks.
@@ -482,11 +482,7 @@ type cinderVolumeProvisioner struct {
 var _ volume.Provisioner = &cinderVolumeProvisioner{}
 
 func (c *cinderVolumeProvisioner) Provision() (*v1.PersistentVolume, error) {
-	if !volume.AccessModesContainedInAll(c.plugin.GetAccessModes(), c.options.PVC.Spec.AccessModes) {
-		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", c.options.PVC.Spec.AccessModes, c.plugin.GetAccessModes())
-	}
-
-	volumeID, sizeGB, labels, err := c.manager.CreateVolume(c)
+	volumeID, sizeGB, err := c.manager.CreateVolume(c)
 	if err != nil {
 		return nil, err
 	}
@@ -494,9 +490,9 @@ func (c *cinderVolumeProvisioner) Provision() (*v1.PersistentVolume, error) {
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   c.options.PVName,
-			Labels: labels,
+			Labels: map[string]string{},
 			Annotations: map[string]string{
-				volumehelper.VolumeDynamicallyCreatedByKey: "cinder-dynamic-provisioner",
+				"kubernetes.io/createdby": "cinder-dynamic-provisioner",
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{

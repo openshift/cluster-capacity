@@ -22,5 +22,10 @@ import (
 )
 
 func addDefaultingFuncs(scheme *runtime.Scheme) error {
-	return v1.RegisterDefaults(scheme)
+	v1.RegisterDefaults(scheme)
+	return scheme.AddDefaultingFuncs(
+		v1.SetDefaults_Secret,
+		v1.SetDefaults_ServiceSpec,
+		v1.SetDefaults_NamespaceStatus,
+	)
 }

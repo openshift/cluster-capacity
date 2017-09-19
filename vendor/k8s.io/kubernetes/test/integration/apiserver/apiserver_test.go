@@ -1,3 +1,5 @@
+// +build integration,!no-etcd
+
 /*
 Copyright 2017 The Kubernetes Authors.
 
@@ -34,16 +36,16 @@ import (
 	"k8s.io/kubernetes/test/integration/framework"
 )
 
-func setup(t *testing.T) (*httptest.Server, clientset.Interface, framework.CloseFunc) {
+func setup(t *testing.T) (*httptest.Server, clientset.Interface) {
 	masterConfig := framework.NewIntegrationTestMasterConfig()
 	masterConfig.EnableCoreControllers = false
-	_, s, closeFn := framework.RunAMaster(masterConfig)
+	_, s := framework.RunAMaster(masterConfig)
 
 	clientSet, err := clientset.NewForConfig(&restclient.Config{Host: s.URL})
 	if err != nil {
 		t.Fatalf("Error in create clientset: %v", err)
 	}
-	return s, clientSet, closeFn
+	return s, clientSet
 }
 
 func verifyStatusCode(t *testing.T, verb, URL, body string, expectedStatusCode int) {
@@ -99,7 +101,7 @@ func newRS(namespace string) *v1beta1.ReplicaSet {
 	}
 }
 
-var cascDel = `
+var cascDel string = `
 {
   "kind": "DeleteOptions",
   "apiVersion": "` + api.Registry.GroupOrDie(api.GroupName).GroupVersion.String() + `",
@@ -109,8 +111,8 @@ var cascDel = `
 
 // Tests that the apiserver returns 202 status code as expected.
 func Test202StatusCode(t *testing.T) {
-	s, clientSet, closeFn := setup(t)
-	defer closeFn()
+	s, clientSet := setup(t)
+	defer s.Close()
 
 	ns := framework.CreateTestingNamespace("status-code", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)

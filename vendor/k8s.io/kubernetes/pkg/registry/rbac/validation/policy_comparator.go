@@ -32,7 +32,7 @@ func Covers(ownerRules, servantRules []rbac.PolicyRule) (bool, []rbac.PolicyRule
 
 	subrules := []rbac.PolicyRule{}
 	for _, servantRule := range servantRules {
-		subrules = append(subrules, BreakdownRule(servantRule)...)
+		subrules = append(subrules, breakdownRule(servantRule)...)
 	}
 
 	uncoveredRules := []rbac.PolicyRule{}
@@ -53,9 +53,9 @@ func Covers(ownerRules, servantRules []rbac.PolicyRule) (bool, []rbac.PolicyRule
 	return (len(uncoveredRules) == 0), uncoveredRules
 }
 
-// BreadownRule takes a rule and builds an equivalent list of rules that each have at most one verb, one
+// breadownRule takes a rule and builds an equivalent list of rules that each have at most one verb, one
 // resource, and one resource name
-func BreakdownRule(rule rbac.PolicyRule) []rbac.PolicyRule {
+func breakdownRule(rule rbac.PolicyRule) []rbac.PolicyRule {
 	subrules := []rbac.PolicyRule{}
 	for _, group := range rule.APIGroups {
 		for _, resource := range rule.Resources {

@@ -32,11 +32,10 @@ func KubeadmFuzzerFuncs(t apitesting.TestingCommon) []interface{} {
 			obj.API.AdvertiseAddress = "foo"
 			obj.Networking.ServiceSubnet = "foo"
 			obj.Networking.DNSDomain = "foo"
-			obj.AuthorizationModes = []string{"foo"}
+			obj.AuthorizationMode = "foo"
 			obj.CertificatesDir = "foo"
 			obj.APIServerCertSANs = []string{}
 			obj.Token = "foo"
-			obj.Etcd.DataDir = "foo"
 		},
 		func(obj *kubeadm.NodeConfiguration, c fuzz.Continue) {
 			c.FuzzNoCustom(obj)

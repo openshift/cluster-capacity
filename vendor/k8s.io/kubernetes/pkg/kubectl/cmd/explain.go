@@ -34,14 +34,14 @@ var (
 	explainLong = templates.LongDesc(`
 		Documentation of resources.
 
-		` + validResources)
+		` + valid_resources)
 
-	explainExamples = templates.Examples(i18n.T(`
+	explainExamples = templates.Examples(`
 		# Get the documentation of the resource and its fields
 		kubectl explain pods
 
 		# Get the documentation of a specific field of a resource
-		kubectl explain pods.spec.containers`))
+		kubectl explain pods.spec.containers`)
 )
 
 // NewCmdExplain returns a cobra command for swagger docs
@@ -57,7 +57,6 @@ func NewCmdExplain(f cmdutil.Factory, out, cmdErr io.Writer) *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("recursive", false, "Print the fields of fields (Currently only 1 level deep)")
-	cmd.Flags().String("api-version", "", "Get different explanations for particular API version")
 	cmdutil.AddInclude3rdPartyFlags(cmd)
 	return cmd
 }
@@ -65,7 +64,7 @@ func NewCmdExplain(f cmdutil.Factory, out, cmdErr io.Writer) *cobra.Command {
 // RunExplain executes the appropriate steps to print a model's documentation
 func RunExplain(f cmdutil.Factory, out, cmdErr io.Writer, cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
-		fmt.Fprint(cmdErr, "You must specify the type of resource to explain. ", validResources)
+		fmt.Fprint(cmdErr, "You must specify the type of resource to explain. ", valid_resources)
 		return cmdutil.UsageError(cmd, "Required resource not specified.")
 	}
 	if len(args) > 1 {

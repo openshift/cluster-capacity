@@ -14,7 +14,7 @@
 
 FROM alpine:3.4
 
-RUN apk add --no-cache redis sed bash
+RUN apk add -U redis sed bash && rm -rf /var/cache/apk/*
 
 COPY redis-master.conf /redis-master/redis.conf
 COPY redis-slave.conf /redis-slave/redis.conf

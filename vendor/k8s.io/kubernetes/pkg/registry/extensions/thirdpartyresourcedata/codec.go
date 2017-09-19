@@ -18,7 +18,7 @@ package thirdpartyresourcedata
 
 import (
 	"bytes"
-	gojson "encoding/json"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/kubernetes/pkg/api"
 	apiutil "k8s.io/kubernetes/pkg/api/util"
@@ -74,7 +73,7 @@ type thirdPartyResourceDataMapper struct {
 var _ meta.RESTMapper = &thirdPartyResourceDataMapper{}
 
 func (t *thirdPartyResourceDataMapper) getResource() schema.GroupVersionResource {
-	plural, _ := meta.UnsafeGuessKindToResource(t.getKind())
+	plural, _ := meta.KindToResource(t.getKind())
 
 	return plural
 }
@@ -172,6 +171,10 @@ func (t *thirdPartyResourceDataMapper) RESTMappings(gk schema.GroupKind, version
 	return mappings, nil
 }
 
+func (t *thirdPartyResourceDataMapper) AliasesForResource(resource string) ([]string, bool) {
+	return t.mapper.AliasesForResource(resource)
+}
+
 func (t *thirdPartyResourceDataMapper) ResourceSingularizer(resource string) (singular string, err error) {
 	return t.mapper.ResourceSingularizer(resource)
 }
@@ -234,11 +237,14 @@ func NewDecoder(delegate runtime.Decoder, kind string) runtime.Decoder {
 var _ runtime.Decoder = &thirdPartyResourceDataDecoder{}
 
 func parseObject(data []byte) (map[string]interface{}, error) {
-	var mapObj map[string]interface{}
-	if err := json.Unmarshal(data, &mapObj); err != nil {
+	var obj interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
 		return nil, err
 	}
-
+	mapObj, ok := obj.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected object: %#v", obj)
+	}
 	return mapObj, nil
 }
 
@@ -295,7 +301,6 @@ func (t *thirdPartyResourceDataDecoder) populateResource(objIn *extensions.Third
 	if err := json.Unmarshal(metadataData, &objIn.ObjectMeta); err != nil {
 		return err
 	}
-
 	// Override API Version with the ThirdPartyResourceData value
 	// TODO: fix this hard code
 	objIn.APIVersion = v1beta1.SchemeGroupVersion.String()
@@ -371,11 +376,15 @@ func (t *thirdPartyResourceDataDecoder) Decode(data []byte, gvk *schema.GroupVer
 	}
 
 	thirdParty := into.(*extensions.ThirdPartyResourceData)
-	var mapObj map[string]interface{}
-	if err := json.Unmarshal(data, &mapObj); err != nil {
+	var dataObj interface{}
+	if err := json.Unmarshal(data, &dataObj); err != nil {
 		return nil, nil, err
 	}
+	mapObj, ok := dataObj.(map[string]interface{})
+	if !ok {
 
+		return nil, nil, fmt.Errorf("unexpected object: %#v", dataObj)
+	}
 	/*if gvk.Kind != "ThirdPartyResourceData" {
 		return nil, nil, fmt.Errorf("unexpected kind: %s", gvk.Kind)
 	}*/
@@ -461,9 +470,13 @@ func NewEncoder(delegate runtime.Encoder, gvk schema.GroupVersionKind) runtime.E
 var _ runtime.Encoder = &thirdPartyResourceDataEncoder{}
 
 func encodeToJSON(obj *extensions.ThirdPartyResourceData, stream io.Writer) error {
-	var objMap map[string]interface{}
-	if err := json.Unmarshal(obj.Data, &objMap); err != nil {
+	var objOut interface{}
+	if err := json.Unmarshal(obj.Data, &objOut); err != nil {
 		return err
+	}
+	objMap, ok := objOut.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected type: %v", objOut)
 	}
 
 	objMap["metadata"] = &obj.ObjectMeta
@@ -477,7 +490,7 @@ func (t *thirdPartyResourceDataEncoder) Encode(obj runtime.Object, stream io.Wri
 		return encodeToJSON(obj, stream)
 	case *extensions.ThirdPartyResourceDataList:
 		// TODO: There are likely still better ways to do this...
-		listItems := make([]gojson.RawMessage, len(obj.Items))
+		listItems := make([]json.RawMessage, len(obj.Items))
 
 		for ix := range obj.Items {
 			buff := &bytes.Buffer{}
@@ -485,7 +498,7 @@ func (t *thirdPartyResourceDataEncoder) Encode(obj runtime.Object, stream io.Wri
 			if err != nil {
 				return err
 			}
-			listItems[ix] = gojson.RawMessage(buff.Bytes())
+			listItems[ix] = json.RawMessage(buff.Bytes())
 		}
 
 		if t.gvk.Empty() {
@@ -494,8 +507,8 @@ func (t *thirdPartyResourceDataEncoder) Encode(obj runtime.Object, stream io.Wri
 
 		encMap := struct {
 			// +optional
-			Kind  string              `json:"kind,omitempty"`
-			Items []gojson.RawMessage `json:"items"`
+			Kind  string            `json:"kind,omitempty"`
+			Items []json.RawMessage `json:"items"`
 			// +optional
 			Metadata metav1.ListMeta `json:"metadata,omitempty"`
 			// +optional
@@ -528,12 +541,6 @@ func (t *thirdPartyResourceDataEncoder) Encode(obj runtime.Object, stream io.Wri
 		}
 
 		return nil
-	case *metav1.WatchEvent:
-		// This is the same as the InternalEvent case above, except the caller
-		// already did the conversion for us (see #44350).
-		// In theory, we probably don't need the InternalEvent case anymore,
-		// but the test coverage for TPR is too low to risk removing it.
-		return json.NewEncoder(stream).Encode(obj)
 	case *metav1.Status, *metav1.APIResourceList:
 		return t.delegate.Encode(obj, stream)
 	default:

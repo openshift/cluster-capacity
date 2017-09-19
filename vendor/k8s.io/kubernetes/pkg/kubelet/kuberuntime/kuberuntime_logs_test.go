@@ -188,7 +188,7 @@ func TestWriteLogsWithBytesLimit(t *testing.T) {
 			bytes:        3,
 			expectStdout: "abc",
 		},
-		{ // limit bytes across lines
+		{ // limit bytes accross lines
 			stdoutLines:  3,
 			bytes:        len(log) + 3,
 			expectStdout: "abcdefg\nabc",

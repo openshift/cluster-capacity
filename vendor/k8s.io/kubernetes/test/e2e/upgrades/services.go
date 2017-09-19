@@ -36,8 +36,6 @@ type ServiceUpgradeTest struct {
 
 func (ServiceUpgradeTest) Name() string { return "service-upgrade" }
 
-func shouldTestPDBs() bool { return framework.ProviderIs("gce", "gke") }
-
 // Setup creates a service with a load balancer and makes sure it's reachable.
 func (t *ServiceUpgradeTest) Setup(f *framework.Framework) {
 	serviceName := "service-test"
@@ -57,12 +55,7 @@ func (t *ServiceUpgradeTest) Setup(f *framework.Framework) {
 	svcPort := int(tcpService.Spec.Ports[0].Port)
 
 	By("creating pod to be part of service " + serviceName)
-	rc := jig.RunOrFail(ns.Name, jig.AddRCAntiAffinity)
-
-	if shouldTestPDBs() {
-		By("creating a PodDisruptionBudget to cover the ReplicationController")
-		jig.CreatePDBOrFail(ns.Name, rc)
-	}
+	jig.RunOrFail(ns.Name, nil)
 
 	// Hit it once before considering ourselves ready
 	By("hitting the pod through the service's LoadBalancer")
@@ -79,9 +72,6 @@ func (t *ServiceUpgradeTest) Test(f *framework.Framework, done <-chan struct{}, 
 	switch upgrade {
 	case MasterUpgrade:
 		t.test(f, done, true)
-	case NodeUpgrade:
-		// Node upgrades should test during disruption only on GCE/GKE for now.
-		t.test(f, done, shouldTestPDBs())
 	default:
 		t.test(f, done, false)
 	}
@@ -97,7 +87,7 @@ func (t *ServiceUpgradeTest) test(f *framework.Framework, done <-chan struct{}, 
 		// Continuous validation
 		By("continuously hitting the pod through the service's LoadBalancer")
 		wait.Until(func() {
-			t.jig.TestReachableHTTP(t.tcpIngressIP, t.svcPort, framework.LoadBalancerLagTimeoutDefault)
+			t.jig.TestReachableHTTP(t.tcpIngressIP, t.svcPort, framework.Poll)
 		}, framework.Poll, done)
 	} else {
 		// Block until upgrade is done

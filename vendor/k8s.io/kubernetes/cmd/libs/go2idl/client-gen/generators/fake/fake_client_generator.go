@@ -123,11 +123,12 @@ func PackageForClientset(customArgs clientgenargs.Args, fakeClientsetPackage str
 					DefaultGen: generator.DefaultGen{
 						OptionalName: "register",
 					},
-					InputPackages: customArgs.GroupVersionToInputPath,
-					OutputPackage: fakeClientsetPackage,
-					Groups:        customArgs.Groups,
-					ImportTracker: generator.NewImportTracker(),
-					PrivateScheme: true,
+					InputPackages:  customArgs.GroupVersionToInputPath,
+					OutputPackage:  fakeClientsetPackage,
+					Groups:         customArgs.Groups,
+					ImportTracker:  generator.NewImportTracker(),
+					PrivateScheme:  true,
+					CreateRegistry: true, // needed to know about root resources and for RESTMapper
 				},
 			}
 			return generators

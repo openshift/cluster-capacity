@@ -32,9 +32,8 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 )
 
-// Register registers a plugin
-func Register(plugins *admission.Plugins) {
-	plugins.Register("AlwaysPullImages", func(config io.Reader) (admission.Interface, error) {
+func init() {
+	admission.RegisterPlugin("AlwaysPullImages", func(config io.Reader) (admission.Interface, error) {
 		return NewAlwaysPullImages(), nil
 	})
 }

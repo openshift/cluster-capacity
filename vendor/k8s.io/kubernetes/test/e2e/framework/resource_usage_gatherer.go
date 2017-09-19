@@ -70,10 +70,6 @@ func (s *ResourceUsageSummary) PrintJSON() string {
 	return PrettyPrintJSON(*s)
 }
 
-func (s *ResourceUsageSummary) SummaryKind() string {
-	return "ResourceUsageSummary"
-}
-
 func computePercentiles(timeSeries []ResourceUsagePerContainer, percentilesToCompute []int) map[int]ResourceUsagePerContainer {
 	if len(timeSeries) == 0 {
 		return make(map[int]ResourceUsagePerContainer)
@@ -131,14 +127,15 @@ func leftMergeData(left, right map[int]ResourceUsagePerContainer) map[int]Resour
 }
 
 type resourceGatherWorker struct {
-	c            clientset.Interface
-	nodeName     string
-	wg           *sync.WaitGroup
-	containerIDs []string
-	stopCh       chan struct{}
-	dataSeries   []ResourceUsagePerContainer
-	finished     bool
-	inKubemark   bool
+	c                    clientset.Interface
+	nodeName             string
+	wg                   *sync.WaitGroup
+	containerIDToNameMap map[string]string
+	containerIDs         []string
+	stopCh               chan struct{}
+	dataSeries           []ResourceUsagePerContainer
+	finished             bool
+	inKubemark           bool
 }
 
 func (w *resourceGatherWorker) singleProbe() {
@@ -156,13 +153,13 @@ func (w *resourceGatherWorker) singleProbe() {
 			}
 		}
 	} else {
-		nodeUsage, err := getOneTimeResourceUsageOnNode(w.c, w.nodeName, probeDuration, func() []string { return w.containerIDs })
+		nodeUsage, err := getOneTimeResourceUsageOnNode(w.c, w.nodeName, probeDuration, func() []string { return w.containerIDs }, true)
 		if err != nil {
 			Logf("Error while reading data from %v: %v", w.nodeName, err)
 			return
 		}
 		for k, v := range nodeUsage {
-			data[k] = v
+			data[w.containerIDToNameMap[k]] = v
 		}
 	}
 	w.dataSeries = append(w.dataSeries, data)
@@ -203,12 +200,13 @@ func (g *containerResourceGatherer) getKubeSystemContainersResourceUsage(c clien
 }
 
 type containerResourceGatherer struct {
-	client       clientset.Interface
-	stopCh       chan struct{}
-	workers      []resourceGatherWorker
-	workerWg     sync.WaitGroup
-	containerIDs []string
-	options      ResourceGathererOptions
+	client               clientset.Interface
+	stopCh               chan struct{}
+	workers              []resourceGatherWorker
+	workerWg             sync.WaitGroup
+	containerIDToNameMap map[string]string
+	containerIDs         []string
+	options              ResourceGathererOptions
 }
 
 type ResourceGathererOptions struct {
@@ -218,10 +216,11 @@ type ResourceGathererOptions struct {
 
 func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOptions) (*containerResourceGatherer, error) {
 	g := containerResourceGatherer{
-		client:       c,
-		stopCh:       make(chan struct{}),
-		containerIDs: make([]string, 0),
-		options:      options,
+		client:               c,
+		stopCh:               make(chan struct{}),
+		containerIDToNameMap: make(map[string]string),
+		containerIDs:         make([]string, 0),
+		options:              options,
 	}
 
 	if options.inKubemark {
@@ -240,7 +239,9 @@ func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOpt
 		}
 		for _, pod := range pods.Items {
 			for _, container := range pod.Status.ContainerStatuses {
-				g.containerIDs = append(g.containerIDs, container.Name)
+				containerID := strings.TrimPrefix(container.ContainerID, "docker:/")
+				g.containerIDToNameMap[containerID] = pod.Name + "/" + container.Name
+				g.containerIDs = append(g.containerIDs, containerID)
 			}
 		}
 		nodeList, err := c.Core().Nodes().List(metav1.ListOptions{})
@@ -253,13 +254,14 @@ func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOpt
 			if !options.masterOnly || system.IsMasterNode(node.Name) {
 				g.workerWg.Add(1)
 				g.workers = append(g.workers, resourceGatherWorker{
-					c:            c,
-					nodeName:     node.Name,
-					wg:           &g.workerWg,
-					containerIDs: g.containerIDs,
-					stopCh:       g.stopCh,
-					finished:     false,
-					inKubemark:   false,
+					c:                    c,
+					nodeName:             node.Name,
+					wg:                   &g.workerWg,
+					containerIDToNameMap: g.containerIDToNameMap,
+					containerIDs:         g.containerIDs,
+					stopCh:               g.stopCh,
+					finished:             false,
+					inKubemark:           false,
 				})
 				if options.masterOnly {
 					break

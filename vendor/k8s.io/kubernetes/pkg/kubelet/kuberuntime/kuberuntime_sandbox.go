@@ -25,7 +25,7 @@ import (
 	"github.com/golang/glog"
 	kubetypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/api/v1"
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
+	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
@@ -116,22 +116,18 @@ func (m *kubeGenericRuntimeManager) generatePodSandboxConfig(pod *v1.Pod, attemp
 		}
 
 	}
+
+	cgroupParent := m.runtimeHelper.GetPodCgroupParent(pod)
+	podSandboxConfig.Linux = m.generatePodSandboxLinuxConfig(pod, cgroupParent)
 	if len(portMappings) > 0 {
 		podSandboxConfig.PortMappings = portMappings
 	}
-
-	lc, err := m.generatePodSandboxLinuxConfig(pod)
-	if err != nil {
-		return nil, err
-	}
-	podSandboxConfig.Linux = lc
 
 	return podSandboxConfig, nil
 }
 
 // generatePodSandboxLinuxConfig generates LinuxPodSandboxConfig from v1.Pod.
-func (m *kubeGenericRuntimeManager) generatePodSandboxLinuxConfig(pod *v1.Pod) (*runtimeapi.LinuxPodSandboxConfig, error) {
-	cgroupParent := m.runtimeHelper.GetPodCgroupParent(pod)
+func (m *kubeGenericRuntimeManager) generatePodSandboxLinuxConfig(pod *v1.Pod, cgroupParent string) *runtimeapi.LinuxPodSandboxConfig {
 	lc := &runtimeapi.LinuxPodSandboxConfig{
 		CgroupParent: cgroupParent,
 		SecurityContext: &runtimeapi.LinuxSandboxSecurityContext{
@@ -139,16 +135,10 @@ func (m *kubeGenericRuntimeManager) generatePodSandboxLinuxConfig(pod *v1.Pod) (
 		},
 	}
 
-	sysctls, err := getSysctlsFromAnnotations(pod.Annotations)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sysctls from annotations %v for pod %q: %v", pod.Annotations, format.Pod(pod), err)
-	}
-	lc.Sysctls = sysctls
-
 	if pod.Spec.SecurityContext != nil {
 		sc := pod.Spec.SecurityContext
 		if sc.RunAsUser != nil {
-			lc.SecurityContext.RunAsUser = &runtimeapi.Int64Value{Value: int64(*sc.RunAsUser)}
+			lc.SecurityContext.RunAsUser = &runtimeapi.Int64Value{Value: *sc.RunAsUser}
 		}
 		lc.SecurityContext.NamespaceOptions = &runtimeapi.NamespaceOption{
 			HostNetwork: pod.Spec.HostNetwork,
@@ -157,15 +147,13 @@ func (m *kubeGenericRuntimeManager) generatePodSandboxLinuxConfig(pod *v1.Pod) (
 		}
 
 		if sc.FSGroup != nil {
-			lc.SecurityContext.SupplementalGroups = append(lc.SecurityContext.SupplementalGroups, int64(*sc.FSGroup))
+			lc.SecurityContext.SupplementalGroups = append(lc.SecurityContext.SupplementalGroups, *sc.FSGroup)
 		}
 		if groups := m.runtimeHelper.GetExtraSupplementalGroupsForPod(pod); len(groups) > 0 {
 			lc.SecurityContext.SupplementalGroups = append(lc.SecurityContext.SupplementalGroups, groups...)
 		}
 		if sc.SupplementalGroups != nil {
-			for _, sg := range sc.SupplementalGroups {
-				lc.SecurityContext.SupplementalGroups = append(lc.SecurityContext.SupplementalGroups, int64(sg))
-			}
+			lc.SecurityContext.SupplementalGroups = append(lc.SecurityContext.SupplementalGroups, sc.SupplementalGroups...)
 		}
 		if sc.SELinuxOptions != nil {
 			lc.SecurityContext.SelinuxOptions = &runtimeapi.SELinuxOption{
@@ -177,7 +165,7 @@ func (m *kubeGenericRuntimeManager) generatePodSandboxLinuxConfig(pod *v1.Pod) (
 		}
 	}
 
-	return lc, nil
+	return lc
 }
 
 // getKubeletSandboxes lists all (or just the running) sandboxes managed by kubelet.

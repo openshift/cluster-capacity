@@ -32,7 +32,7 @@ import (
 	. "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 )
 
-func TestSetDefaultDaemonSetSpec(t *testing.T) {
+func TestSetDefaultDaemonSet(t *testing.T) {
 	defaultLabels := map[string]string{"foo": "bar"}
 	period := int64(v1.DefaultTerminationGracePeriodSeconds)
 	defaultTemplate := v1.PodTemplateSpec{
@@ -78,7 +78,6 @@ func TestSetDefaultDaemonSetSpec(t *testing.T) {
 					UpdateStrategy: DaemonSetUpdateStrategy{
 						Type: OnDeleteDaemonSetStrategyType,
 					},
-					RevisionHistoryLimit: newInt32(10),
 				},
 			},
 		},
@@ -90,8 +89,7 @@ func TestSetDefaultDaemonSetSpec(t *testing.T) {
 					},
 				},
 				Spec: DaemonSetSpec{
-					Template:             defaultTemplate,
-					RevisionHistoryLimit: newInt32(1),
+					Template: defaultTemplate,
 				},
 			},
 			expected: &DaemonSet{
@@ -108,7 +106,6 @@ func TestSetDefaultDaemonSetSpec(t *testing.T) {
 					UpdateStrategy: DaemonSetUpdateStrategy{
 						Type: OnDeleteDaemonSetStrategyType,
 					},
-					RevisionHistoryLimit: newInt32(1),
 				},
 			},
 		},
@@ -120,7 +117,19 @@ func TestSetDefaultDaemonSetSpec(t *testing.T) {
 					UpdateStrategy: DaemonSetUpdateStrategy{
 						Type: OnDeleteDaemonSetStrategyType,
 					},
-					RevisionHistoryLimit: newInt32(10),
+				},
+			},
+		},
+		{ // Update strategy.
+			original: &DaemonSet{
+				Spec: DaemonSetSpec{},
+			},
+			expected: &DaemonSet{
+				Spec: DaemonSetSpec{
+					Template: templateNoLabel,
+					UpdateStrategy: DaemonSetUpdateStrategy{
+						Type: OnDeleteDaemonSetStrategyType,
+					},
 				},
 			},
 		},
@@ -134,7 +143,6 @@ func TestSetDefaultDaemonSetSpec(t *testing.T) {
 					UpdateStrategy: DaemonSetUpdateStrategy{
 						Type: OnDeleteDaemonSetStrategyType,
 					},
-					RevisionHistoryLimit: newInt32(10),
 				},
 			},
 		},

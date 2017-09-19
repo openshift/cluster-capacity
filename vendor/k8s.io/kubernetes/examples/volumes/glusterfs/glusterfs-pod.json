@@ -8,7 +8,7 @@
         "containers": [
             {
                 "name": "glusterfs",
-                "image": "nginx",
+                "image": "kubernetes/pause",
                 "volumeMounts": [
                     {
                         "mountPath": "/mnt/glusterfs",

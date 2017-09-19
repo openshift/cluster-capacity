@@ -19,6 +19,8 @@ package kubeadm
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 )
 
@@ -27,12 +29,12 @@ import (
 func RunCmd(command string, args ...string) (string, string, error) {
 	var bout, berr bytes.Buffer
 	cmd := exec.Command(command, args...)
-	cmd.Stdout = &bout
-	cmd.Stderr = &berr
+	cmd.Stdout = io.MultiWriter(os.Stdout, &bout)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &berr)
 	err := cmd.Run()
 	stdout, stderr := bout.String(), berr.String()
 	if err != nil {
-		return "", "", fmt.Errorf("error running %s %v; \ngot error %v, \nstdout %q, \nstderr %q",
+		return "", "", fmt.Errorf("error running %s %v; got error %v, stdout %q, stderr %q",
 			command, args, err, stdout, stderr)
 	}
 	return stdout, stderr, nil

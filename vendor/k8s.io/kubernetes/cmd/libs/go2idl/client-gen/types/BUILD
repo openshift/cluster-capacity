@@ -15,7 +15,7 @@ go_library(
         "types.go",
     ],
     tags = ["automanaged"],
-    deps = ["//vendor/k8s.io/gengo/namer:go_default_library"],
+    deps = ["//vendor:k8s.io/gengo/namer"],
 )
 
 go_test(

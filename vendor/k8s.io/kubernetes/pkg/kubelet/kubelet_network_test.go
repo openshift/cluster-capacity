@@ -19,11 +19,10 @@ package kubelet
 import (
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/util/bandwidth"
@@ -62,10 +61,10 @@ func TestNodeIPParam(t *testing.T) {
 	for _, test := range tests {
 		kubelet.nodeIP = net.ParseIP(test.nodeIP)
 		err := kubelet.validateNodeIP()
-		if test.success {
-			assert.NoError(t, err, "test %s", test.testName)
-		} else {
-			assert.Error(t, err, fmt.Sprintf("test %s", test.testName))
+		if err != nil && test.success {
+			t.Errorf("Test: %s, expected no error but got: %v", test.testName, err)
+		} else if err == nil && !test.success {
+			t.Errorf("Test: %s, expected an error", test.testName)
 		}
 	}
 }
@@ -91,7 +90,6 @@ func TestParseResolvConf(t *testing.T) {
 		{"nameserver\t1.2.3.4", []string{"1.2.3.4"}, []string{}},
 		{"nameserver \t 1.2.3.4", []string{"1.2.3.4"}, []string{}},
 		{"nameserver 1.2.3.4\nnameserver 5.6.7.8", []string{"1.2.3.4", "5.6.7.8"}, []string{}},
-		{"nameserver 1.2.3.4 #comment", []string{"1.2.3.4"}, []string{}},
 		{"search foo", []string{}, []string{"foo"}},
 		{"search foo bar", []string{}, []string{"foo", "bar"}},
 		{"search foo bar bat\n", []string{}, []string{"foo", "bar", "bat"}},
@@ -105,15 +103,21 @@ func TestParseResolvConf(t *testing.T) {
 	kubelet := testKubelet.kubelet
 	for i, tc := range testCases {
 		ns, srch, err := kubelet.parseResolvConf(strings.NewReader(tc.data))
-		require.NoError(t, err)
-		assert.EqualValues(t, tc.nameservers, ns, "test case [%d]: name servers", i)
-		assert.EqualValues(t, tc.searches, srch, "test case [%d] searches", i)
+		if err != nil {
+			t.Errorf("expected success, got %v", err)
+			continue
+		}
+		if !reflect.DeepEqual(ns, tc.nameservers) {
+			t.Errorf("[%d] expected nameservers %#v, got %#v", i, tc.nameservers, ns)
+		}
+		if !reflect.DeepEqual(srch, tc.searches) {
+			t.Errorf("[%d] expected searches %#v, got %#v", i, tc.searches, srch)
+		}
 	}
 }
 
 func TestComposeDNSSearch(t *testing.T) {
 	testKubelet := newTestKubelet(t, false /* controllerAttachDetachEnabled */)
-	defer testKubelet.Cleanup()
 	kubelet := testKubelet.kubelet
 
 	recorder := record.NewFakeRecorder(20)
@@ -175,11 +179,17 @@ func TestComposeDNSSearch(t *testing.T) {
 
 	for i, tc := range testCases {
 		dnsSearch := kubelet.formDNSSearch(tc.hostNames, pod)
-		assert.EqualValues(t, tc.resultSearch, dnsSearch, "test [%d]", i)
+
+		if !reflect.DeepEqual(dnsSearch, tc.resultSearch) {
+			t.Errorf("[%d] expected search line %#v, got %#v", i, tc.resultSearch, dnsSearch)
+		}
+
 		for _, expectedEvent := range tc.events {
 			expected := fmt.Sprintf("%s %s %s", v1.EventTypeWarning, "DNSSearchForming", expectedEvent)
 			event := fetchEvent(recorder)
-			assert.Equal(t, expected, event, "test [%d]", i)
+			if event != expected {
+				t.Errorf("[%d] expected event '%s', got '%s", i, expected, event)
+			}
 		}
 	}
 }
@@ -258,8 +268,12 @@ func TestCleanupBandwidthLimits(t *testing.T) {
 		}
 
 		err := testKube.kubelet.cleanupBandwidthLimits(test.pods)
-		assert.NoError(t, err, "test [%s]", test.name)
-		assert.EqualValues(t, test.expectResetCIDRs, shaper.ResetCIDRs, "test[%s]", test.name)
+		if err != nil {
+			t.Errorf("unexpected error: %v (%s)", test.name, err)
+		}
+		if !reflect.DeepEqual(shaper.ResetCIDRs, test.expectResetCIDRs) {
+			t.Errorf("[%s]\nexpected: %v, saw: %v", test.name, test.expectResetCIDRs, shaper.ResetCIDRs)
+		}
 	}
 }
 
@@ -279,6 +293,8 @@ func TestGetIPTablesMark(t *testing.T) {
 	}
 	for _, tc := range tests {
 		res := getIPTablesMark(tc.bit)
-		assert.Equal(t, tc.expect, res, "input %d", tc.bit)
+		if res != tc.expect {
+			t.Errorf("getIPTablesMark output unexpected result: %v when input bit is %d. Expect result: %v", res, tc.bit, tc.expect)
+		}
 	}
 }

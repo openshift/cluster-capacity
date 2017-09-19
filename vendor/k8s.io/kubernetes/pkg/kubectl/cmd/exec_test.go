@@ -32,7 +32,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/kubernetes/pkg/api"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
 	"k8s.io/kubernetes/pkg/util/term"
@@ -44,7 +43,7 @@ type fakeRemoteExecutor struct {
 	execErr error
 }
 
-func (f *fakeRemoteExecutor) Execute(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue remotecommand.TerminalSizeQueue) error {
+func (f *fakeRemoteExecutor) Execute(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue term.TerminalSizeQueue) error {
 	f.method = method
 	f.url = url
 	return f.execErr
@@ -141,22 +140,22 @@ func TestPodAndContainer(t *testing.T) {
 		options := test.p
 		err := options.Complete(f, cmd, test.args, test.argsLenAtDash)
 		if test.expectError && err == nil {
-			t.Errorf("%s: unexpected non-error", test.name)
+			t.Errorf("unexpected non-error (%s)", test.name)
 		}
 		if !test.expectError && err != nil {
-			t.Errorf("%s: unexpected error: %v", test.name, err)
+			t.Errorf("unexpected error: %v (%s)", err, test.name)
 		}
 		if err != nil {
 			continue
 		}
 		if options.PodName != test.expectedPod {
-			t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedPod, options.PodName)
+			t.Errorf("expected: %s, got: %s (%s)", test.expectedPod, options.PodName, test.name)
 		}
 		if options.ContainerName != test.expectedContainer {
-			t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedContainer, options.ContainerName)
+			t.Errorf("expected: %s, got: %s (%s)", test.expectedContainer, options.ContainerName, test.name)
 		}
 		if !reflect.DeepEqual(test.expectedArgs, options.Command) {
-			t.Errorf("%s: expected: %v, got %v", test.name, test.expectedArgs, options.Command)
+			t.Errorf("expected: %v, got %v (%s)", test.expectedArgs, options.Command, test.name)
 		}
 	}
 }

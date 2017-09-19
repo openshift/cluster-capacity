@@ -18,7 +18,10 @@ package flexvolume
 
 import (
 	"io/ioutil"
+	"path"
 
+	"k8s.io/kubernetes/pkg/util/exec"
+	utilstrings "k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 )
 
@@ -34,12 +37,13 @@ func ProbeVolumePlugins(pluginDir string) []volume.VolumePlugin {
 		// e.g. dirname = vendor~cifs
 		// then, executable will be pluginDir/dirname/cifs
 		if f.IsDir() {
-			plugin, err := NewFlexVolumePlugin(pluginDir, f.Name())
-			if err != nil {
-				continue
-			}
-
-			plugins = append(plugins, plugin)
+			execPath := path.Join(pluginDir, f.Name())
+			plugins = append(plugins, &flexVolumePlugin{
+				driverName:          utilstrings.UnescapePluginName(f.Name()),
+				execPath:            execPath,
+				runner:              exec.New(),
+				unsupportedCommands: []string{},
+			})
 		}
 	}
 	return plugins

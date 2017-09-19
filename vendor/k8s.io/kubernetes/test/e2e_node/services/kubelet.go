@@ -137,12 +137,7 @@ func (e *E2EServices) startKubelet() (*server, error) {
 		"--serialize-image-pulls", "false",
 		"--pod-manifest-path", manifestPath,
 		"--file-check-frequency", "10s", // Check file frequently so tests won't wait too long
-		// Assign a fixed CIDR to the node because there is no node controller.
-		//
-		// Note: this MUST be in sync with with the IP in
-		// - cluster/gce/config-test.sh and
-		// - test/e2e_node/conformance/run_test.sh.
-		"--pod-cidr", "10.100.0.0/24",
+		"--pod-cidr", "10.180.0.0/24", // Assign a fixed CIDR to the node because there is no node controller.
 		"--eviction-pressure-transition-period", "30s",
 		// Apply test framework feature gates by default. This could also be overridden
 		// by kubelet-flags.
@@ -152,20 +147,13 @@ func (e *E2EServices) startKubelet() (*server, error) {
 		"--v", LOG_VERBOSITY_LEVEL, "--logtostderr",
 	)
 	// Enable kubenet by default.
-	cniBinDir, err := getCNIBinDirectory()
+	cniDir, err := getCNIDirectory()
 	if err != nil {
 		return nil, err
 	}
-
-	cniConfDir, err := getCNIConfDirectory()
-	if err != nil {
-		return nil, err
-	}
-
 	cmdArgs = append(cmdArgs,
 		"--network-plugin=kubenet",
-		"--cni-bin-dir", cniBinDir,
-		"--cni-conf-dir", cniConfDir)
+		"--network-plugin-dir", cniDir)
 
 	// Keep hostname override for convenience.
 	if framework.TestContext.NodeName != "" { // If node name is specified, set hostname override.
@@ -206,22 +194,14 @@ func createPodManifestDirectory() (string, error) {
 	return path, nil
 }
 
-// getCNIBinDirectory returns CNI directory.
-func getCNIBinDirectory() (string, error) {
+// getCNIDirectory returns CNI directory.
+func getCNIDirectory() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
+	// TODO(random-liu): Make sure the cni directory name is the same with that in remote/remote.go
 	return filepath.Join(cwd, "cni", "bin"), nil
-}
-
-// getCNIConfDirectory returns CNI Configuration directory.
-func getCNIConfDirectory() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(cwd, "cni", "net.d"), nil
 }
 
 // adjustArgsForSystemd escape special characters in kubelet arguments for systemd. Systemd

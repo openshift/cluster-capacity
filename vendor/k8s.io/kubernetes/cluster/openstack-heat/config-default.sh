@@ -73,6 +73,3 @@ SOCKS_PROXY=${SOCKS_PROXY:-}
 
 # IPs and Domains that bypass the proxy.
 NO_PROXY=${NO_PROXY:-}
-
-# Whether to assign floating IPs to minions
-ASSIGN_FLOATING_IP=${ASSIGN_FLOATING_IP:-true}

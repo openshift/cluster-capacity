@@ -29,10 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"k8s.io/kubernetes/pkg/api/v1"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	podapi "k8s.io/kubernetes/pkg/api/v1/pod"
 	apps "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
 	"k8s.io/kubernetes/pkg/controller"
-	"k8s.io/kubernetes/pkg/controller/history"
 )
 
 func TestGetParentNameAndOrdinal(t *testing.T) {
@@ -80,12 +79,12 @@ func TestIdentityMatches(t *testing.T) {
 		t.Error("identity matches for a Pod with the wrong namespace")
 	}
 	pod = newStatefulSetPod(set, 1)
-	pod.Spec.Hostname = ""
+	delete(pod.Annotations, podapi.PodHostnameAnnotation)
 	if identityMatches(set, pod) {
 		t.Error("identity matches for a Pod with no hostname")
 	}
 	pod = newStatefulSetPod(set, 1)
-	pod.Spec.Subdomain = ""
+	delete(pod.Annotations, podapi.PodSubdomainAnnotation)
 	if identityMatches(set, pod) {
 		t.Error("identity matches for a Pod with no subdomain")
 	}
@@ -139,7 +138,7 @@ func TestUpdateIdentity(t *testing.T) {
 		t.Error("updateIdentity failed to update the Pods namespace")
 	}
 	pod = newStatefulSetPod(set, 1)
-	pod.Spec.Hostname = ""
+	delete(pod.Annotations, podapi.PodHostnameAnnotation)
 	if identityMatches(set, pod) {
 		t.Error("identity matches for a Pod with no hostname")
 	}
@@ -148,13 +147,22 @@ func TestUpdateIdentity(t *testing.T) {
 		t.Error("updateIdentity failed to update the Pod's hostname")
 	}
 	pod = newStatefulSetPod(set, 1)
-	pod.Spec.Subdomain = ""
+	delete(pod.Annotations, podapi.PodSubdomainAnnotation)
 	if identityMatches(set, pod) {
 		t.Error("identity matches for a Pod with no subdomain")
 	}
 	updateIdentity(set, pod)
 	if !identityMatches(set, pod) {
 		t.Error("updateIdentity failed to update the Pod's subdomain")
+	}
+	pod = newStatefulSetPod(set, 1)
+	pod.Annotations = nil
+	if identityMatches(set, pod) {
+		t.Error("identity matches for a Pod no annotations")
+	}
+	updateIdentity(set, pod)
+	if !identityMatches(set, pod) {
+		t.Error("updateIdentity failed to update the Pod's annotations")
 	}
 }
 
@@ -209,7 +217,7 @@ func TestIsRunningAndReady(t *testing.T) {
 		t.Error("isRunningAndReady does not respect Pod condition")
 	}
 	condition := v1.PodCondition{Type: v1.PodReady, Status: v1.ConditionTrue}
-	podutil.UpdatePodCondition(&pod.Status, &condition)
+	v1.UpdatePodCondition(&pod.Status, &condition)
 	if !isRunningAndReady(pod) {
 		t.Error("Pod should be running and ready")
 	}
@@ -288,26 +296,6 @@ func TestNewPodControllerRef(t *testing.T) {
 	}
 }
 
-func TestCreateApplyRevision(t *testing.T) {
-	set := newStatefulSet(1)
-	revision, err := newRevision(set, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	set.Spec.Template.Spec.Containers[0].Name = "foo"
-	restoredSet, err := applyRevision(set, revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restoredRevision, err := newRevision(restoredSet, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !history.EqualRevision(revision, restoredRevision) {
-		t.Errorf("wanted %v got %v", string(revision.Data.Raw), string(restoredRevision.Data.Raw))
-	}
-}
-
 func newPVC(name string) v1.PersistentVolumeClaim {
 	return v1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -375,11 +363,6 @@ func newStatefulSetWithVolumes(replicas int, name string, petMounts []v1.VolumeM
 			Template:             template,
 			VolumeClaimTemplates: claims,
 			ServiceName:          "governingsvc",
-			UpdateStrategy:       apps.StatefulSetUpdateStrategy{Type: apps.RollingUpdateStatefulSetStrategyType},
-			RevisionHistoryLimit: func() *int32 {
-				limit := int32(2)
-				return &limit
-			}(),
 		},
 	}
 }

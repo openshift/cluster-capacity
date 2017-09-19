@@ -29,18 +29,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/emicklei/go-restful-swagger12"
+	"github.com/emicklei/go-restful/swagger"
 	"github.com/go-openapi/spec"
 	"github.com/pborman/uuid"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	openapicommon "k8s.io/apimachinery/pkg/openapi"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/apiserver/pkg/admission"
-	"k8s.io/apiserver/pkg/audit"
-	auditpolicy "k8s.io/apiserver/pkg/audit/policy"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/authenticatorfactory"
 	authenticatorunion "k8s.io/apiserver/pkg/authentication/request/union"
@@ -48,17 +47,14 @@ import (
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/authorization/authorizerfactory"
 	authorizerunion "k8s.io/apiserver/pkg/authorization/union"
-	"k8s.io/apiserver/pkg/endpoints/discovery"
 	genericapifilters "k8s.io/apiserver/pkg/endpoints/filters"
 	apiopenapi "k8s.io/apiserver/pkg/endpoints/openapi"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
-	"k8s.io/apiserver/pkg/features"
 	genericregistry "k8s.io/apiserver/pkg/registry/generic"
 	genericfilters "k8s.io/apiserver/pkg/server/filters"
 	"k8s.io/apiserver/pkg/server/healthz"
+	"k8s.io/apiserver/pkg/server/mux"
 	"k8s.io/apiserver/pkg/server/routes"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/client-go/informers"
 	restclient "k8s.io/client-go/rest"
 	certutil "k8s.io/client-go/util/cert"
 
@@ -95,21 +91,14 @@ type Config struct {
 	EnableSwaggerUI bool
 	EnableIndex     bool
 	EnableProfiling bool
-	EnableDiscovery bool
 	// Requires generic profiling enabled
 	EnableContentionProfiling bool
 	EnableMetrics             bool
 
-	DisabledPostStartHooks sets.String
-
 	// Version will enable the /version endpoint if non-nil
 	Version *version.Info
-	// LegacyAuditWriter is the destination for audit logs.  If nil, they will not be written.
-	LegacyAuditWriter io.Writer
-	// AuditBackend is where audit events are sent to.
-	AuditBackend audit.Backend
-	// AuditPolicyChecker makes the decision of whether and how to audit log a request.
-	AuditPolicyChecker auditpolicy.Checker
+	// AuditWriter is the destination for audit logs.  If nil, they will not be written.
+	AuditWriter io.Writer
 	// SupportsBasicAuth indicates that's at least one Authenticator supports basic auth
 	// If this is true, a basic auth challenge is returned on authentication failure
 	// TODO(roberthbailey): Remove once the server no longer supports http basic auth.
@@ -118,17 +107,15 @@ type Config struct {
 	// Will default to a value based on secure serving info and available ipv4 IPs.
 	ExternalAddress string
 
-	// SharedInformerFactory provides shared informers for resources
-	SharedInformerFactory informers.SharedInformerFactory
 	//===========================================================================
 	// Fields you probably don't care about changing
 	//===========================================================================
 
-	// BuildHandlerChainFunc allows you to build custom handler chains by decorating the apiHandler.
-	BuildHandlerChainFunc func(apiHandler http.Handler, c *Config) (secure http.Handler)
+	// BuildHandlerChainsFunc allows you to build custom handler chains by decorating the apiHandler.
+	BuildHandlerChainsFunc func(apiHandler http.Handler, c *Config) (secure, insecure http.Handler)
 	// DiscoveryAddresses is used to build the IPs pass to discovery.  If nil, the ExternalAddress is
 	// always reported
-	DiscoveryAddresses discovery.Addresses
+	DiscoveryAddresses DiscoveryAddresses
 	// The default set of healthz checks. There might be more added via AddHealthzChecks dynamically.
 	HealthzChecks []healthz.HealthzChecker
 	// LegacyAPIGroupPrefixes is used to set up URL parsing for authorization and for validating requests
@@ -158,7 +145,11 @@ type Config struct {
 	// request has to wait.
 	MaxMutatingRequestsInFlight int
 	// Predicate which is true for paths of long-running http requests
-	LongRunningFunc apirequest.LongRunningRequestCheck
+	LongRunningFunc genericfilters.LongRunningRequestCheck
+
+	// InsecureServingInfo is required to serve http.  HTTP does NOT include authentication or authorization.
+	// You shouldn't be using this.  It makes sig-auth sad.
+	InsecureServingInfo *ServingInfo
 
 	//===========================================================================
 	// values below here are targets for removal
@@ -173,12 +164,16 @@ type Config struct {
 	PublicAddress net.IP
 }
 
-type SecureServingInfo struct {
+type ServingInfo struct {
 	// BindAddress is the ip:port to serve on
 	BindAddress string
 	// BindNetwork is the type of network to bind to - defaults to "tcp", accepts "tcp",
 	// "tcp4", and "tcp6".
 	BindNetwork string
+}
+
+type SecureServingInfo struct {
+	ServingInfo
 
 	// Cert is the main server cert which is used if SNI does not match. Cert must be non-nil and is
 	// allowed to be in SNICerts.
@@ -193,28 +188,17 @@ type SecureServingInfo struct {
 
 	// ClientCA is the certificate bundle for all the signers that you'll recognize for incoming client certificates
 	ClientCA *x509.CertPool
-
-	// MinTLSVersion optionally overrides the minimum TLS version supported.
-	// Values are from tls package constants (https://golang.org/pkg/crypto/tls/#pkg-constants).
-	MinTLSVersion uint16
-
-	// CipherSuites optionally overrides the list of allowed cipher suites for the server.
-	// Values are from tls package constants (https://golang.org/pkg/crypto/tls/#pkg-constants).
-	CipherSuites []uint16
 }
 
 // NewConfig returns a Config struct with the default values
-func NewConfig(codecs serializer.CodecFactory) *Config {
+func NewConfig() *Config {
 	return &Config{
-		Serializer:                  codecs,
 		ReadWritePort:               443,
 		RequestContextMapper:        apirequest.NewRequestContextMapper(),
-		BuildHandlerChainFunc:       DefaultBuildHandlerChain,
+		BuildHandlerChainsFunc:      DefaultBuildHandlerChain,
 		LegacyAPIGroupPrefixes:      sets.NewString(DefaultLegacyAPIPrefix),
-		DisabledPostStartHooks:      sets.NewString(),
 		HealthzChecks:               []healthz.HealthzChecker{healthz.PingHealthz},
 		EnableIndex:                 true,
-		EnableDiscovery:             true,
 		EnableProfiling:             true,
 		MaxRequestsInFlight:         400,
 		MaxMutatingRequestsInFlight: 200,
@@ -224,6 +208,11 @@ func NewConfig(codecs serializer.CodecFactory) *Config {
 		// Generic API servers have no inherent long-running subresources
 		LongRunningFunc: genericfilters.BasicLongRunningRequestCheck(sets.NewString("watch"), sets.NewString()),
 	}
+}
+
+func (c *Config) WithSerializer(codecs serializer.CodecFactory) *Config {
+	c.Serializer = codecs
+	return c
 }
 
 func DefaultOpenAPIConfig(getDefinitions openapicommon.GetOpenAPIDefinitions, scheme *runtime.Scheme) *openapicommon.Config {
@@ -251,7 +240,7 @@ func DefaultOpenAPIConfig(getDefinitions openapicommon.GetOpenAPIDefinitions, sc
 // WebServices set.
 func DefaultSwaggerConfig() *swagger.Config {
 	return &swagger.Config{
-		ApiPath:         "/swaggerapi",
+		ApiPath:         "/swaggerapi/",
 		SwaggerPath:     "/swaggerui/",
 		SwaggerFilePath: "/swagger-ui/",
 		SchemaFormatHandler: func(typeName string) string {
@@ -318,17 +307,6 @@ func (c *Config) Complete() completedConfig {
 				},
 			}
 		}
-
-		if c.OpenAPIConfig.Info == nil {
-			c.OpenAPIConfig.Info = &spec.Info{}
-		}
-		if c.OpenAPIConfig.Info.Version == "" {
-			if c.Version != nil {
-				c.OpenAPIConfig.Info.Version = strings.Split(c.Version.String(), "-")[0]
-			} else {
-				c.OpenAPIConfig.Info.Version = "unversioned"
-			}
-		}
 	}
 	if c.SwaggerConfig != nil && len(c.SwaggerConfig.WebServicesUrl) == 0 {
 		if c.SecureServingInfo != nil {
@@ -338,7 +316,7 @@ func (c *Config) Complete() completedConfig {
 		}
 	}
 	if c.DiscoveryAddresses == nil {
-		c.DiscoveryAddresses = discovery.DefaultAddresses{DefaultAddress: c.ExternalAddress}
+		c.DiscoveryAddresses = DefaultDiscoveryAddresses{DefaultAddress: c.ExternalAddress}
 	}
 
 	// If the loopbackclientconfig is specified AND it has a token for use against the API server
@@ -368,22 +346,35 @@ func (c *Config) SkipComplete() completedConfig {
 	return completedConfig{c}
 }
 
-// New creates a new server which logically combines the handling chain with the passed server.
-// name is used to differentiate for logging.  The handler chain in particular can be difficult as it starts delgating.
-func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*GenericAPIServer, error) {
-	// The delegationTarget and the config must agree on the RequestContextMapper
-
+// New returns a new instance of GenericAPIServer from the given config.
+// Certain config fields will be set to a default value if unset,
+// including:
+//   ServiceClusterIPRange
+//   ServiceNodePortRange
+//   MasterCount
+//   ReadWritePort
+//   PublicAddress
+// Public fields:
+//   Handler -- The returned GenericAPIServer has a field TopHandler which is an
+//   http.Handler which handles all the endpoints provided by the GenericAPIServer,
+//   including the API, the UI, and miscellaneous debugging endpoints.  All
+//   these are subject to authorization and authentication.
+//   InsecureHandler -- an http.Handler which handles all the same
+//   endpoints as Handler, but no authorization and authentication is done.
+// Public methods:
+//   HandleWithAuth -- Allows caller to add an http.Handler for an endpoint
+//   that uses the same authentication and authorization (if any is configured)
+//   as the GenericAPIServer's built-in endpoints.
+//   If the caller wants to add additional endpoints not using the GenericAPIServer's
+//   auth, then the caller should create a handler for those endpoints, which delegates the
+//   any unhandled paths to "Handler".
+func (c completedConfig) New() (*GenericAPIServer, error) {
 	if c.Serializer == nil {
 		return nil, fmt.Errorf("Genericapiserver.New() called with config.Serializer == nil")
 	}
 	if c.LoopbackClientConfig == nil {
 		return nil, fmt.Errorf("Genericapiserver.New() called with config.LoopbackClientConfig == nil")
 	}
-
-	handlerChainBuilder := func(handler http.Handler) http.Handler {
-		return c.BuildHandlerChainFunc(handler, c.Config)
-	}
-	apiServerHandler := NewAPIServerHandler(name, c.RequestContextMapper, c.Serializer, handlerChainBuilder, delegationTarget.UnprotectedHandler())
 
 	s := &GenericAPIServer{
 		discoveryAddresses:     c.DiscoveryAddresses,
@@ -392,116 +383,90 @@ func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*G
 		admissionControl:       c.AdmissionControl,
 		requestContextMapper:   c.RequestContextMapper,
 		Serializer:             c.Serializer,
-		AuditBackend:           c.AuditBackend,
 
 		minRequestTimeout: time.Duration(c.MinRequestTimeout) * time.Second,
 
-		SecureServingInfo: c.SecureServingInfo,
-		ExternalAddress:   c.ExternalAddress,
+		SecureServingInfo:   c.SecureServingInfo,
+		InsecureServingInfo: c.InsecureServingInfo,
+		ExternalAddress:     c.ExternalAddress,
 
-		Handler: apiServerHandler,
-
-		listedPathProvider: apiServerHandler,
+		apiGroupsForDiscovery: map[string]metav1.APIGroup{},
 
 		swaggerConfig: c.SwaggerConfig,
 		openAPIConfig: c.OpenAPIConfig,
 
-		postStartHooks:         map[string]postStartHookEntry{},
-		disabledPostStartHooks: c.DisabledPostStartHooks,
-
-		healthzChecks: c.HealthzChecks,
-
-		DiscoveryGroupManager: discovery.NewRootAPIsHandler(c.DiscoveryAddresses, c.Serializer, c.RequestContextMapper),
+		postStartHooks: map[string]postStartHookEntry{},
+		healthzChecks:  c.HealthzChecks,
 	}
 
-	for k, v := range delegationTarget.PostStartHooks() {
-		s.postStartHooks[k] = v
-	}
+	s.HandlerContainer = mux.NewAPIContainer(http.NewServeMux(), c.Serializer)
 
-	genericApiServerHookName := "generic-apiserver-start-informers"
-	if c.SharedInformerFactory != nil && !s.isHookRegistered(genericApiServerHookName) {
-		err := s.AddPostStartHook(genericApiServerHookName, func(context PostStartHookContext) error {
-			c.SharedInformerFactory.Start(context.StopCh)
-			return nil
-		})
-		if err != nil {
-			return nil, err
+	if s.openAPIConfig != nil {
+		if s.openAPIConfig.Info == nil {
+			s.openAPIConfig.Info = &spec.Info{}
 		}
-	}
-	for _, delegateCheck := range delegationTarget.HealthzChecks() {
-		skip := false
-		for _, existingCheck := range c.HealthzChecks {
-			if existingCheck.Name() == delegateCheck.Name() {
-				skip = true
-				break
+		if s.openAPIConfig.Info.Version == "" {
+			if c.Version != nil {
+				s.openAPIConfig.Info.Version = strings.Split(c.Version.String(), "-")[0]
+			} else {
+				s.openAPIConfig.Info.Version = "unversioned"
 			}
 		}
-		if skip {
-			continue
-		}
-
-		s.healthzChecks = append(s.healthzChecks, delegateCheck)
 	}
 
-	s.listedPathProvider = routes.ListedPathProviders{s.listedPathProvider, delegationTarget}
+	s.installAPI(c.Config)
 
-	installAPI(s, c.Config)
-
-	// use the UnprotectedHandler from the delegation target to ensure that we don't attempt to double authenticator, authorize,
-	// or some other part of the filter chain in delegation cases.
-	if delegationTarget.UnprotectedHandler() == nil && c.EnableIndex {
-		s.Handler.NonGoRestfulMux.NotFoundHandler(routes.IndexLister{
-			StatusCode:   http.StatusNotFound,
-			PathProvider: s.listedPathProvider,
-		})
-	}
+	s.Handler, s.InsecureHandler = c.BuildHandlerChainsFunc(s.HandlerContainer.ServeMux, c.Config)
 
 	return s, nil
 }
 
-func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
-	handler := genericapifilters.WithAuthorization(apiHandler, c.RequestContextMapper, c.Authorizer)
-	handler = genericapifilters.WithImpersonation(handler, c.RequestContextMapper, c.Authorizer)
-	if utilfeature.DefaultFeatureGate.Enabled(features.AdvancedAuditing) {
-		handler = genericapifilters.WithAudit(handler, c.RequestContextMapper, c.AuditBackend, c.AuditPolicyChecker, c.LongRunningFunc)
-	} else {
-		handler = genericapifilters.WithLegacyAudit(handler, c.RequestContextMapper, c.LegacyAuditWriter)
+func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) (secure, insecure http.Handler) {
+	generic := func(handler http.Handler) http.Handler {
+		handler = genericfilters.WithCORS(handler, c.CorsAllowedOriginList, nil, nil, nil, "true")
+		handler = genericfilters.WithPanicRecovery(handler, c.RequestContextMapper)
+		handler = genericfilters.WithTimeoutForNonLongRunningRequests(handler, c.RequestContextMapper, c.LongRunningFunc)
+		handler = genericfilters.WithMaxInFlightLimit(handler, c.MaxRequestsInFlight, c.MaxMutatingRequestsInFlight, c.RequestContextMapper, c.LongRunningFunc)
+		handler = genericapifilters.WithRequestInfo(handler, NewRequestInfoResolver(c), c.RequestContextMapper)
+		handler = apirequest.WithRequestContext(handler, c.RequestContextMapper)
+		return handler
 	}
-	handler = genericapifilters.WithAuthentication(handler, c.RequestContextMapper, c.Authenticator, genericapifilters.Unauthorized(c.SupportsBasicAuth))
-	handler = genericfilters.WithCORS(handler, c.CorsAllowedOriginList, nil, nil, nil, "true")
-	handler = genericfilters.WithPanicRecovery(handler)
-	handler = genericfilters.WithTimeoutForNonLongRunningRequests(handler, c.RequestContextMapper, c.LongRunningFunc)
-	handler = genericfilters.WithMaxInFlightLimit(handler, c.MaxRequestsInFlight, c.MaxMutatingRequestsInFlight, c.RequestContextMapper, c.LongRunningFunc)
-	handler = genericapifilters.WithRequestInfo(handler, NewRequestInfoResolver(c), c.RequestContextMapper)
-	handler = apirequest.WithRequestContext(handler, c.RequestContextMapper)
-	return handler
+	audit := func(handler http.Handler) http.Handler {
+		return genericapifilters.WithAudit(handler, c.RequestContextMapper, c.AuditWriter)
+	}
+	protect := func(handler http.Handler) http.Handler {
+		handler = genericapifilters.WithAuthorization(handler, c.RequestContextMapper, c.Authorizer)
+		handler = genericapifilters.WithImpersonation(handler, c.RequestContextMapper, c.Authorizer)
+		handler = audit(handler) // before impersonation to read original user
+		handler = genericapifilters.WithAuthentication(handler, c.RequestContextMapper, c.Authenticator, genericapifilters.Unauthorized(c.SupportsBasicAuth))
+		return handler
+	}
+
+	return generic(protect(apiHandler)), generic(audit(apiHandler))
 }
 
-func installAPI(s *GenericAPIServer, c *Config) {
+func (s *GenericAPIServer) installAPI(c *Config) {
 	if c.EnableIndex {
-		routes.Index{}.Install(s.listedPathProvider, s.Handler.NonGoRestfulMux)
+		routes.Index{}.Install(s.HandlerContainer)
 	}
 	if c.SwaggerConfig != nil && c.EnableSwaggerUI {
-		routes.SwaggerUI{}.Install(s.Handler.NonGoRestfulMux)
+		routes.SwaggerUI{}.Install(s.HandlerContainer)
 	}
 	if c.EnableProfiling {
-		routes.Profiling{}.Install(s.Handler.NonGoRestfulMux)
+		routes.Profiling{}.Install(s.HandlerContainer)
 		if c.EnableContentionProfiling {
 			goruntime.SetBlockProfileRate(1)
 		}
 	}
 	if c.EnableMetrics {
 		if c.EnableProfiling {
-			routes.MetricsWithReset{}.Install(s.Handler.NonGoRestfulMux)
+			routes.MetricsWithReset{}.Install(s.HandlerContainer)
 		} else {
-			routes.DefaultMetrics{}.Install(s.Handler.NonGoRestfulMux)
+			routes.DefaultMetrics{}.Install(s.HandlerContainer)
 		}
 	}
-	routes.Version{Version: c.Version}.Install(s.Handler.GoRestfulContainer)
-
-	if c.EnableDiscovery {
-		s.Handler.GoRestfulContainer.Add(s.DiscoveryGroupManager.WebService())
-	}
+	routes.Version{Version: c.Version}.Install(s.HandlerContainer)
+	s.HandlerContainer.Add(s.DynamicApisDiscovery())
 }
 
 func NewRequestInfoResolver(c *Config) *apirequest.RequestInfoFactory {

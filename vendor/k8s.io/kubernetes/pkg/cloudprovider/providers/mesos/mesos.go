@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/cloudprovider"
-	"k8s.io/kubernetes/pkg/controller"
 )
 
 const (
@@ -89,9 +88,6 @@ func newMesosCloud(configReader io.Reader) (*MesosCloud, error) {
 		return &MesosCloud{client: cl, config: config}, nil
 	}
 }
-
-// Initialize passes a Kubernetes clientBuilder interface to the cloud provider
-func (c *MesosCloud) Initialize(clientBuilder controller.ControllerClientBuilder) {}
 
 // Implementation of Instances.CurrentNodeName
 func (c *MesosCloud) CurrentNodeName(hostname string) (types.NodeName, error) {
@@ -173,7 +169,7 @@ func (c *MesosCloud) Master(clusterName string) (string, error) {
 			return host, nil
 		}
 	}
-	return "", fmt.Errorf("The supplied cluster '%v' does not exist", clusterName)
+	return "", errors.New(fmt.Sprintf("The supplied cluster '%v' does not exist", clusterName))
 }
 
 // ipAddress returns an IP address of the specified instance.
@@ -228,13 +224,6 @@ func (c *MesosCloud) ExternalID(nodeName types.NodeName) (string, error) {
 // InstanceID returns the cloud provider ID of the instance with the specified nodeName.
 func (c *MesosCloud) InstanceID(nodeName types.NodeName) (string, error) {
 	return "", nil
-}
-
-// InstanceTypeByProviderID returns the cloudprovider instance type of the node with the specified unique providerID
-// This method will not be called from the node that is requesting this ID. i.e. metadata service
-// and other local methods cannot be used here
-func (c *MesosCloud) InstanceTypeByProviderID(providerID string) (string, error) {
-	return "", errors.New("unimplemented")
 }
 
 // InstanceType returns the type of the instance with the specified nodeName.
@@ -302,14 +291,8 @@ func (c *MesosCloud) NodeAddresses(nodeName types.NodeName) ([]v1.NodeAddress, e
 		return nil, err
 	}
 	return []v1.NodeAddress{
+		{Type: v1.NodeLegacyHostIP, Address: ip.String()},
 		{Type: v1.NodeInternalIP, Address: ip.String()},
 		{Type: v1.NodeExternalIP, Address: ip.String()},
 	}, nil
-}
-
-// NodeAddressesByProviderID returns the node addresses of an instances with the specified unique providerID
-// This method will not be called from the node that is requesting this ID. i.e. metadata service
-// and other local methods cannot be used here
-func (c *MesosCloud) NodeAddressesByProviderID(providerID string) ([]v1.NodeAddress, error) {
-	return []v1.NodeAddress{}, errors.New("unimplemented")
 }

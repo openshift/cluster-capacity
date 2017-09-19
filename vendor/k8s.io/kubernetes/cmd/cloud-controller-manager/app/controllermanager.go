@@ -199,12 +199,6 @@ func StartControllers(s *options.CloudControllerManagerServer, kubeconfig *restc
 	client := func(serviceAccountName string) clientset.Interface {
 		return rootClientBuilder.ClientOrDie(serviceAccountName)
 	}
-
-	if cloud != nil {
-		// Initialize the cloud provider with a reference to the clientBuilder
-		cloud.Initialize(clientBuilder)
-	}
-
 	versionedClient := client("shared-informers")
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, resyncPeriod(s)())
 
@@ -214,12 +208,13 @@ func StartControllers(s *options.CloudControllerManagerServer, kubeconfig *restc
 	}
 
 	// Start the CloudNodeController
-	nodeController := nodecontroller.NewCloudNodeController(
+	nodeController, err := nodecontroller.NewCloudNodeController(
 		sharedInformers.Core().V1().Nodes(),
 		client("cloud-node-controller"), cloud,
-		s.NodeMonitorPeriod.Duration,
-		s.NodeStatusUpdateFrequency.Duration)
-
+		s.NodeMonitorPeriod.Duration)
+	if err != nil {
+		glog.Fatalf("Failed to initialize nodecontroller: %v", err)
+	}
 	nodeController.Run()
 	time.Sleep(wait.Jitter(s.ControllerStartInterval.Duration, ControllerStartJitter))
 
@@ -244,7 +239,7 @@ func StartControllers(s *options.CloudControllerManagerServer, kubeconfig *restc
 			glog.Warning("configure-cloud-routes is set, but cloud provider does not support routes. Will not configure cloud provider routes.")
 		} else {
 			routeController := routecontroller.New(routes, client("route-controller"), sharedInformers.Core().V1().Nodes(), s.ClusterName, clusterCIDR)
-			go routeController.Run(stop, s.RouteReconciliationPeriod.Duration)
+			routeController.Run(stop, s.RouteReconciliationPeriod.Duration)
 			time.Sleep(wait.Jitter(s.ControllerStartInterval.Duration, ControllerStartJitter))
 		}
 	} else {

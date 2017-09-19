@@ -34,9 +34,12 @@ type REST struct {
 // NewREST returns a RESTStorage object that will work against ClusterRole objects.
 func NewREST(optsGetter generic.RESTOptionsGetter) *REST {
 	store := &genericregistry.Store{
-		Copier:            api.Scheme,
-		NewFunc:           func() runtime.Object { return &rbac.ClusterRole{} },
-		NewListFunc:       func() runtime.Object { return &rbac.ClusterRoleList{} },
+		Copier:      api.Scheme,
+		NewFunc:     func() runtime.Object { return &rbac.ClusterRole{} },
+		NewListFunc: func() runtime.Object { return &rbac.ClusterRoleList{} },
+		ObjectNameFunc: func(obj runtime.Object) (string, error) {
+			return obj.(*rbac.ClusterRole).Name, nil
+		},
 		PredicateFunc:     clusterrole.Matcher,
 		QualifiedResource: rbac.Resource("clusterroles"),
 		WatchCacheSize:    cachesize.GetWatchCacheSizeByResource("clusterroles"),

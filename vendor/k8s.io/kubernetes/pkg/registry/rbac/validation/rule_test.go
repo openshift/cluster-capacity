@@ -128,7 +128,7 @@ func TestDefaultRuleResolver(t *testing.T) {
 			StaticRoles:    staticRoles1,
 			user:           &user.DefaultInfo{Name: "foobar"},
 			namespace:      "namespace2",
-			effectiveRules: nil,
+			effectiveRules: []rbac.PolicyRule{},
 		},
 		{
 			StaticRoles: staticRoles1,
@@ -139,7 +139,7 @@ func TestDefaultRuleResolver(t *testing.T) {
 		{
 			StaticRoles:    staticRoles1,
 			user:           &user.DefaultInfo{},
-			effectiveRules: nil,
+			effectiveRules: []rbac.PolicyRule{},
 		},
 	}
 

@@ -32,9 +32,12 @@ type REST struct {
 // NewREST returns a RESTStorage object that will work against secrets.
 func NewREST(optsGetter generic.RESTOptionsGetter) *REST {
 	store := &genericregistry.Store{
-		Copier:            api.Scheme,
-		NewFunc:           func() runtime.Object { return &api.Secret{} },
-		NewListFunc:       func() runtime.Object { return &api.SecretList{} },
+		Copier:      api.Scheme,
+		NewFunc:     func() runtime.Object { return &api.Secret{} },
+		NewListFunc: func() runtime.Object { return &api.SecretList{} },
+		ObjectNameFunc: func(obj runtime.Object) (string, error) {
+			return obj.(*api.Secret).Name, nil
+		},
 		PredicateFunc:     secret.Matcher,
 		QualifiedResource: api.Resource("secrets"),
 		WatchCacheSize:    cachesize.GetWatchCacheSizeByResource("secrets"),

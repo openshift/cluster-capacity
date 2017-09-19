@@ -23,7 +23,7 @@ package internalversion
 type IngressListerExpansion interface{}
 
 // IngressNamespaceListerExpansion allows custom methods to be added to
-// IngressNamespaceLister.
+// IngressNamespaeLister.
 type IngressNamespaceListerExpansion interface{}
 
 // NetworkPolicyListerExpansion allows custom methods to be added to
@@ -31,7 +31,7 @@ type IngressNamespaceListerExpansion interface{}
 type NetworkPolicyListerExpansion interface{}
 
 // NetworkPolicyNamespaceListerExpansion allows custom methods to be added to
-// NetworkPolicyNamespaceLister.
+// NetworkPolicyNamespaeLister.
 type NetworkPolicyNamespaceListerExpansion interface{}
 
 // PodSecurityPolicyListerExpansion allows custom methods to be added to
@@ -43,7 +43,7 @@ type PodSecurityPolicyListerExpansion interface{}
 type ScaleListerExpansion interface{}
 
 // ScaleNamespaceListerExpansion allows custom methods to be added to
-// ScaleNamespaceLister.
+// ScaleNamespaeLister.
 type ScaleNamespaceListerExpansion interface{}
 
 // ThirdPartyResourceListerExpansion allows custom methods to be added to

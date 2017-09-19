@@ -189,7 +189,8 @@ func (s *sourceFile) extractFromFile(filename string) (pod *v1.Pod, err error) {
 		return pod, nil
 	}
 
-	return pod, fmt.Errorf("%v: couldn't parse as pod(%v), please check config file.\n", filename, podErr)
+	return pod, fmt.Errorf("%v: read '%v', but couldn't parse as pod(%v).\n",
+		filename, string(data), podErr)
 }
 
 func (s *sourceFile) replaceStore(pods ...*v1.Pod) (err error) {

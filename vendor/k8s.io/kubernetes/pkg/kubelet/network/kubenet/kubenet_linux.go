@@ -31,7 +31,6 @@ import (
 
 	"github.com/containernetworking/cni/libcni"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
-	cnitypes020 "github.com/containernetworking/cni/pkg/types/020"
 	"github.com/golang/glog"
 	"github.com/vishvananda/netlink"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -179,14 +178,12 @@ func (plugin *kubenetNetworkPlugin) Init(host network.Host, hairpinMode componen
 
 // TODO: move thic logic into cni bridge plugin and remove this from kubenet
 func (plugin *kubenetNetworkPlugin) ensureMasqRule() error {
-	if plugin.nonMasqueradeCIDR != "0.0.0.0/0" {
-		if _, err := plugin.iptables.EnsureRule(utiliptables.Append, utiliptables.TableNAT, utiliptables.ChainPostrouting,
-			"-m", "comment", "--comment", "kubenet: SNAT for outbound traffic from cluster",
-			"-m", "addrtype", "!", "--dst-type", "LOCAL",
-			"!", "-d", plugin.nonMasqueradeCIDR,
-			"-j", "MASQUERADE"); err != nil {
-			return fmt.Errorf("Failed to ensure that %s chain %s jumps to MASQUERADE: %v", utiliptables.TableNAT, utiliptables.ChainPostrouting, err)
-		}
+	if _, err := plugin.iptables.EnsureRule(utiliptables.Append, utiliptables.TableNAT, utiliptables.ChainPostrouting,
+		"-m", "comment", "--comment", "kubenet: SNAT for outbound traffic from cluster",
+		"-m", "addrtype", "!", "--dst-type", "LOCAL",
+		"!", "-d", plugin.nonMasqueradeCIDR,
+		"-j", "MASQUERADE"); err != nil {
+		return fmt.Errorf("Failed to ensure that %s chain %s jumps to MASQUERADE: %v", utiliptables.TableNAT, utiliptables.ChainPostrouting, err)
 	}
 	return nil
 }
@@ -317,14 +314,9 @@ func (plugin *kubenetNetworkPlugin) setup(namespace string, name string, id kube
 	}
 
 	// Hook container up with our bridge
-	resT, err := plugin.addContainerToNetwork(plugin.netConfig, network.DefaultInterfaceName, namespace, name, id)
+	res, err := plugin.addContainerToNetwork(plugin.netConfig, network.DefaultInterfaceName, namespace, name, id)
 	if err != nil {
 		return err
-	}
-	// Coerce the CNI result version
-	res, err := cnitypes020.GetResult(resT)
-	if err != nil {
-		return fmt.Errorf("unable to understand network config: %v", err)
 	}
 	if res.IP4 == nil {
 		return fmt.Errorf("CNI plugin reported no IPv4 address for container %v.", id)
@@ -389,7 +381,7 @@ func (plugin *kubenetNetworkPlugin) setup(namespace string, name string, id kube
 			return err
 		}
 
-		newPodPortMapping := hostport.ConstructPodPortMapping(pod, ip4)
+		newPodPortMapping := constructPodPortMapping(pod, ip4)
 		if err := plugin.hostportSyncer.OpenPodHostportsAndSync(newPodPortMapping, BridgeName, activePodPortMappings); err != nil {
 			return err
 		}
@@ -560,9 +552,6 @@ func (plugin *kubenetNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 	if err != nil {
 		return nil, fmt.Errorf("Kubenet failed to retrieve network namespace path: %v", err)
 	}
-	if netnsPath == "" {
-		return nil, fmt.Errorf("Cannot find the network namespace, skipping pod network status for container %q", id)
-	}
 	ip, err := network.GetPodIP(plugin.execer, plugin.nsenterPath, netnsPath, network.DefaultInterfaceName)
 	if err != nil {
 		return nil, err
@@ -649,10 +638,33 @@ func (plugin *kubenetNetworkPlugin) getPodPortMappings() ([]*hostport.PodPortMap
 			continue
 		}
 		if pod, ok := plugin.host.GetPodByName(p.Namespace, p.Name); ok {
-			activePodPortMappings = append(activePodPortMappings, hostport.ConstructPodPortMapping(pod, podIP))
+			activePodPortMappings = append(activePodPortMappings, constructPodPortMapping(pod, podIP))
 		}
 	}
 	return activePodPortMappings, nil
+}
+
+func constructPodPortMapping(pod *v1.Pod, podIP net.IP) *hostport.PodPortMapping {
+	portMappings := make([]*hostport.PortMapping, 0)
+	for _, c := range pod.Spec.Containers {
+		for _, port := range c.Ports {
+			portMappings = append(portMappings, &hostport.PortMapping{
+				Name:          port.Name,
+				HostPort:      port.HostPort,
+				ContainerPort: port.ContainerPort,
+				Protocol:      port.Protocol,
+				HostIP:        port.HostIP,
+			})
+		}
+	}
+
+	return &hostport.PodPortMapping{
+		Namespace:    pod.Namespace,
+		Name:         pod.Name,
+		PortMappings: portMappings,
+		HostNetwork:  pod.Spec.HostNetwork,
+		IP:           podIP,
+	}
 }
 
 // ipamGarbageCollection will release unused IP.
@@ -741,9 +753,9 @@ func podIsExited(p *kubecontainer.Pod) bool {
 	return true
 }
 
-func (plugin *kubenetNetworkPlugin) buildCNIRuntimeConf(ifName string, id kubecontainer.ContainerID, needNetNs bool) (*libcni.RuntimeConf, error) {
+func (plugin *kubenetNetworkPlugin) buildCNIRuntimeConf(ifName string, id kubecontainer.ContainerID) (*libcni.RuntimeConf, error) {
 	netnsPath, err := plugin.host.GetNetNS(id.ID)
-	if needNetNs && err != nil {
+	if err != nil {
 		glog.Errorf("Kubenet failed to retrieve network namespace path: %v", err)
 	}
 
@@ -754,8 +766,8 @@ func (plugin *kubenetNetworkPlugin) buildCNIRuntimeConf(ifName string, id kubeco
 	}, nil
 }
 
-func (plugin *kubenetNetworkPlugin) addContainerToNetwork(config *libcni.NetworkConfig, ifName, namespace, name string, id kubecontainer.ContainerID) (cnitypes.Result, error) {
-	rt, err := plugin.buildCNIRuntimeConf(ifName, id, true)
+func (plugin *kubenetNetworkPlugin) addContainerToNetwork(config *libcni.NetworkConfig, ifName, namespace, name string, id kubecontainer.ContainerID) (*cnitypes.Result, error) {
+	rt, err := plugin.buildCNIRuntimeConf(ifName, id)
 	if err != nil {
 		return nil, fmt.Errorf("Error building CNI config: %v", err)
 	}
@@ -769,7 +781,7 @@ func (plugin *kubenetNetworkPlugin) addContainerToNetwork(config *libcni.Network
 }
 
 func (plugin *kubenetNetworkPlugin) delContainerFromNetwork(config *libcni.NetworkConfig, ifName, namespace, name string, id kubecontainer.ContainerID) error {
-	rt, err := plugin.buildCNIRuntimeConf(ifName, id, false)
+	rt, err := plugin.buildCNIRuntimeConf(ifName, id)
 	if err != nil {
 		return fmt.Errorf("Error building CNI config: %v", err)
 	}

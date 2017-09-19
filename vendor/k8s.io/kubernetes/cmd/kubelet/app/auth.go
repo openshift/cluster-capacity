@@ -34,8 +34,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/server"
 )
 
-// BuildAuth creates an authenticator, an authorizer, and a matching authorizer attributes getter compatible with the kubelet's needs
-func BuildAuth(nodeName types.NodeName, client clientset.Interface, config componentconfig.KubeletConfiguration) (server.AuthInterface, error) {
+func buildAuth(nodeName types.NodeName, client clientset.Interface, config componentconfig.KubeletConfiguration) (server.AuthInterface, error) {
 	// Get clients, if provided
 	var (
 		tokenClient authenticationclient.TokenReviewInterface
@@ -46,14 +45,14 @@ func BuildAuth(nodeName types.NodeName, client clientset.Interface, config compo
 		sarClient = client.AuthorizationV1beta1().SubjectAccessReviews()
 	}
 
-	authenticator, err := BuildAuthn(tokenClient, config.Authentication)
+	authenticator, err := buildAuthn(tokenClient, config.Authentication)
 	if err != nil {
 		return nil, err
 	}
 
 	attributes := server.NewNodeAuthorizerAttributesGetter(nodeName)
 
-	authorizer, err := BuildAuthz(sarClient, config.Authorization)
+	authorizer, err := buildAuthz(sarClient, config.Authorization)
 	if err != nil {
 		return nil, err
 	}
@@ -61,8 +60,7 @@ func BuildAuth(nodeName types.NodeName, client clientset.Interface, config compo
 	return server.NewKubeletAuth(authenticator, attributes, authorizer), nil
 }
 
-// BuildAuthn creates an authenticator compatible with the kubelet's needs
-func BuildAuthn(client authenticationclient.TokenReviewInterface, authn componentconfig.KubeletAuthentication) (authenticator.Request, error) {
+func buildAuthn(client authenticationclient.TokenReviewInterface, authn componentconfig.KubeletAuthentication) (authenticator.Request, error) {
 	authenticatorConfig := authenticatorfactory.DelegatingAuthenticatorConfig{
 		Anonymous:    authn.Anonymous.Enabled,
 		CacheTTL:     authn.Webhook.CacheTTL.Duration,
@@ -80,8 +78,7 @@ func BuildAuthn(client authenticationclient.TokenReviewInterface, authn componen
 	return authenticator, err
 }
 
-// BuildAuthz creates an authorizer compatible with the kubelet's needs
-func BuildAuthz(client authorizationclient.SubjectAccessReviewInterface, authz componentconfig.KubeletAuthorization) (authorizer.Authorizer, error) {
+func buildAuthz(client authorizationclient.SubjectAccessReviewInterface, authz componentconfig.KubeletAuthorization) (authorizer.Authorizer, error) {
 	switch authz.Mode {
 	case componentconfig.KubeletAuthorizationModeAlwaysAllow:
 		return authorizerfactory.NewAlwaysAllowAuthorizer(), nil

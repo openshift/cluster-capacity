@@ -31,7 +31,6 @@ import (
 	federationv1beta1 "k8s.io/kubernetes/federation/apis/federation/v1beta1"
 	federationclientset "k8s.io/kubernetes/federation/client/clientset_generated/federation_clientset"
 	controllerutil "k8s.io/kubernetes/federation/pkg/federation-controller/util"
-	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/api/v1"
 )
@@ -125,15 +124,15 @@ func TestUpdateClusterStatusOK(t *testing.T) {
 	}
 	federationClientSet := federationclientset.NewForConfigOrDie(restclient.AddUserAgent(restClientCfg, "cluster-controller"))
 
-	// Override KubeconfigGetterForSecret to avoid having to setup service accounts and mount files with secret tokens.
-	originalGetter := controllerutil.KubeconfigGetterForSecret
-	controllerutil.KubeconfigGetterForSecret = func(s *api.Secret) clientcmd.KubeconfigGetter {
+	// Override KubeconfigGetterForCluster to avoid having to setup service accounts and mount files with secret tokens.
+	originalGetter := controllerutil.KubeconfigGetterForCluster
+	controllerutil.KubeconfigGetterForCluster = func(c *federationv1beta1.Cluster) clientcmd.KubeconfigGetter {
 		return func() (*clientcmdapi.Config, error) {
 			return &clientcmdapi.Config{}, nil
 		}
 	}
 
-	manager := newClusterController(federationClientSet, 5)
+	manager := NewclusterController(federationClientSet, 5)
 	err = manager.UpdateClusterStatus()
 	if err != nil {
 		t.Errorf("Failed to Update Cluster Status: %v", err)
@@ -147,6 +146,6 @@ func TestUpdateClusterStatusOK(t *testing.T) {
 		}
 	}
 
-	// Reset KubeconfigGetterForSecret
-	controllerutil.KubeconfigGetterForSecret = originalGetter
+	// Reset KubeconfigGetterForCluster
+	controllerutil.KubeconfigGetterForCluster = originalGetter
 }

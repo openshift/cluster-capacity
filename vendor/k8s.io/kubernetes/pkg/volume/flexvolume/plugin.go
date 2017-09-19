@@ -17,12 +17,9 @@ limitations under the License.
 package flexvolume
 
 import (
-	"fmt"
 	"path"
 	"strings"
 	"sync"
-
-	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/types"
 	api "k8s.io/kubernetes/pkg/api/v1"
@@ -45,55 +42,8 @@ type flexVolumePlugin struct {
 	unsupportedCommands []string
 }
 
-type flexVolumeAttachablePlugin struct {
-	*flexVolumePlugin
-}
-
-var _ volume.AttachableVolumePlugin = &flexVolumeAttachablePlugin{}
+var _ volume.AttachableVolumePlugin = &flexVolumePlugin{}
 var _ volume.PersistentVolumePlugin = &flexVolumePlugin{}
-
-func NewFlexVolumePlugin(pluginDir, name string) (volume.VolumePlugin, error) {
-	execPath := path.Join(pluginDir, name)
-
-	driverName := utilstrings.UnescapePluginName(name)
-
-	flexPlugin := &flexVolumePlugin{
-		driverName:          driverName,
-		execPath:            execPath,
-		runner:              exec.New(),
-		unsupportedCommands: []string{},
-	}
-
-	// Check whether the plugin is attachable.
-	ok, err := isAttachable(flexPlugin)
-	if err != nil {
-		return nil, err
-	}
-
-	if ok {
-		// Plugin supports attach/detach, so return flexVolumeAttachablePlugin
-		return &flexVolumeAttachablePlugin{flexVolumePlugin: flexPlugin}, nil
-	} else {
-		return flexPlugin, nil
-	}
-}
-
-func isAttachable(plugin *flexVolumePlugin) (bool, error) {
-	call := plugin.NewDriverCall(initCmd)
-	res, err := call.Run()
-	if err != nil {
-		return false, err
-	}
-
-	// By default all plugins are attachable, unless they report otherwise.
-	cap, ok := res.Capabilities[attachCapability]
-	if ok {
-		// cap is false, so plugin does not support attach/detach calls.
-		return cap, nil
-	}
-
-	return true, nil
-}
 
 // Init is part of the volume.VolumePlugin interface.
 func (plugin *flexVolumePlugin) Init(host volume.VolumeHost) error {
@@ -112,7 +62,7 @@ func (plugin *flexVolumePlugin) getExecutable() string {
 
 // Name is part of the volume.VolumePlugin interface.
 func (plugin *flexVolumePlugin) GetPluginName() string {
-	return "flexvolume-" + plugin.driverName
+	return plugin.driverName
 }
 
 // GetVolumeName is part of the volume.VolumePlugin interface.
@@ -120,21 +70,13 @@ func (plugin *flexVolumePlugin) GetVolumeName(spec *volume.Spec) (string, error)
 	call := plugin.NewDriverCall(getVolumeNameCmd)
 	call.AppendSpec(spec, plugin.host, nil)
 
-	_, err := call.Run()
+	status, err := call.Run()
 	if isCmdNotSupportedErr(err) {
 		return (*pluginDefaults)(plugin).GetVolumeName(spec)
 	} else if err != nil {
 		return "", err
 	}
-
-	name, err := (*pluginDefaults)(plugin).GetVolumeName(spec)
-	if err != nil {
-		return "", err
-	}
-
-	glog.Warning(logPrefix(plugin), "GetVolumeName is not supported yet. Defaulting to PV or volume name: ", name)
-
-	return name, nil
+	return utilstrings.EscapeQualifiedNameForDisk(status.VolumeName), nil
 }
 
 // CanSupport is part of the volume.VolumePlugin interface.
@@ -166,15 +108,13 @@ func (plugin *flexVolumePlugin) newMounterInternal(spec *volume.Spec, pod *api.P
 	source, readOnly := getVolumeSource(spec)
 	return &flexVolumeMounter{
 		flexVolume: &flexVolume{
-			driverName:            source.Driver,
-			execPath:              plugin.getExecutable(),
-			mounter:               mounter,
-			plugin:                plugin,
-			podName:               pod.Name,
-			podUID:                pod.UID,
-			podNamespace:          pod.Namespace,
-			podServiceAccountName: pod.Spec.ServiceAccountName,
-			volName:               spec.Name(),
+			driverName:   source.Driver,
+			execPath:     plugin.getExecutable(),
+			mounter:      mounter,
+			plugin:       plugin,
+			podUID:       pod.UID,
+			podNamespace: pod.Namespace,
+			volName:      spec.Name(),
 		},
 		runner:             runner,
 		spec:               spec,
@@ -204,12 +144,12 @@ func (plugin *flexVolumePlugin) newUnmounterInternal(volName string, podUID type
 }
 
 // NewAttacher is part of the volume.AttachableVolumePlugin interface.
-func (plugin *flexVolumeAttachablePlugin) NewAttacher() (volume.Attacher, error) {
+func (plugin *flexVolumePlugin) NewAttacher() (volume.Attacher, error) {
 	return &flexVolumeAttacher{plugin}, nil
 }
 
 // NewDetacher is part of the volume.AttachableVolumePlugin interface.
-func (plugin *flexVolumeAttachablePlugin) NewDetacher() (volume.Detacher, error) {
+func (plugin *flexVolumePlugin) NewDetacher() (volume.Detacher, error) {
 	return &flexVolumeDetacher{plugin}, nil
 }
 
@@ -256,14 +196,4 @@ func (plugin *flexVolumePlugin) isUnsupported(command string) bool {
 func (plugin *flexVolumePlugin) GetDeviceMountRefs(deviceMountPath string) ([]string, error) {
 	mounter := plugin.host.GetMounter()
 	return mount.GetMountRefs(mounter, deviceMountPath)
-}
-
-func (plugin *flexVolumePlugin) getDeviceMountPath(spec *volume.Spec) (string, error) {
-	volumeName, err := plugin.GetVolumeName(spec)
-	if err != nil {
-		return "", fmt.Errorf("GetVolumeName failed from getDeviceMountPath: %s", err)
-	}
-
-	mountsDir := path.Join(plugin.host.GetPluginDir(flexVolumePluginName), plugin.driverName, "mounts")
-	return path.Join(mountsDir, volumeName), nil
 }

@@ -20,18 +20,16 @@ package cni
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net"
 	"os"
 	"path"
-	"reflect"
 	"testing"
 	"text/template"
 
-	types020 "github.com/containernetworking/cni/pkg/types/020"
+	cnitypes "github.com/containernetworking/cni/pkg/types"
 	"github.com/stretchr/testify/mock"
 	utiltesting "k8s.io/client-go/util/testing"
 	"k8s.io/kubernetes/pkg/api/v1"
@@ -41,7 +39,6 @@ import (
 	containertest "k8s.io/kubernetes/pkg/kubelet/container/testing"
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	"k8s.io/kubernetes/pkg/kubelet/network/cni/testing"
-	"k8s.io/kubernetes/pkg/kubelet/network/hostport"
 	networktest "k8s.io/kubernetes/pkg/kubelet/network/testing"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
 )
@@ -57,7 +54,7 @@ func installPluginUnderTest(t *testing.T, testVendorCNIDirPrefix, testNetworkCon
 	if err != nil {
 		t.Fatalf("Failed to install plugin")
 	}
-	networkConfig := fmt.Sprintf(`{ "name": "%s", "type": "%s", "capabilities": {"portMappings": true}  }`, plugName, vendorName)
+	networkConfig := fmt.Sprintf("{ \"name\": \"%s\", \"type\": \"%s\" }", plugName, vendorName)
 
 	_, err = f.WriteString(networkConfig)
 	if err != nil {
@@ -74,7 +71,7 @@ func installPluginUnderTest(t *testing.T, testVendorCNIDirPrefix, testNetworkCon
 	f, err = os.Create(pluginExec)
 
 	const execScriptTempl = `#!/bin/bash
-cat > {{.InputFile}}
+read ignore
 env > {{.OutputEnv}}
 echo "%@" >> {{.OutputEnv}}
 export $(echo ${CNI_ARGS} | sed 's/;/ /g') &> /dev/null
@@ -83,7 +80,6 @@ echo -n "$CNI_COMMAND $CNI_NETNS $K8S_POD_NAMESPACE $K8S_POD_NAME $K8S_POD_INFRA
 echo -n "{ \"ip4\": { \"ip\": \"10.1.0.23/24\" } }"
 `
 	execTemplateData := &map[string]interface{}{
-		"InputFile":  path.Join(pluginDir, plugName+".in"),
 		"OutputFile": path.Join(pluginDir, plugName+".out"),
 		"OutputEnv":  path.Join(pluginDir, plugName+".env"),
 		"OutputDir":  pluginDir,
@@ -121,11 +117,10 @@ type fakeNetworkHost struct {
 	runtime    kubecontainer.Runtime
 }
 
-func NewFakeHost(kubeClient clientset.Interface, pods []*containertest.FakePod, ports map[string][]*hostport.PortMapping) *fakeNetworkHost {
+func NewFakeHost(kubeClient clientset.Interface, pods []*containertest.FakePod) *fakeNetworkHost {
 	host := &fakeNetworkHost{
-		networktest.FakePortMappingGetter{PortMaps: ports},
-		kubeClient,
-		&containertest.FakeRuntime{
+		kubeClient: kubeClient,
+		runtime: &containertest.FakeRuntime{
 			AllPodList: pods,
 		},
 	}
@@ -212,22 +207,9 @@ func TestCNIPlugin(t *testing.T) {
 	cniPlugin.execer = fexec
 	cniPlugin.loNetwork.CNIConfig = mockLoCNI
 
-	mockLoCNI.On("AddNetworkList", cniPlugin.loNetwork.NetworkConfig, mock.AnythingOfType("*libcni.RuntimeConf")).Return(&types020.Result{IP4: &types020.IPConfig{IP: net.IPNet{IP: []byte{127, 0, 0, 1}}}}, nil)
+	mockLoCNI.On("AddNetwork", cniPlugin.loNetwork.NetworkConfig, mock.AnythingOfType("*libcni.RuntimeConf")).Return(&cnitypes.Result{IP4: &cnitypes.IPConfig{IP: net.IPNet{IP: []byte{127, 0, 0, 1}}}}, nil)
 
-	ports := map[string][]*hostport.PortMapping{
-		containerID.ID: {
-			{
-				Name:          "name",
-				HostPort:      8008,
-				ContainerPort: 80,
-				Protocol:      "UDP",
-				HostIP:        "0.0.0.0",
-			},
-		},
-	}
-	fakeHost := NewFakeHost(nil, pods, ports)
-
-	plug, err := network.InitNetworkPlugin(plugins, "cni", fakeHost, componentconfig.HairpinNone, "10.0.0.0/8", network.UseDefaultMTU)
+	plug, err := network.InitNetworkPlugin(plugins, "cni", NewFakeHost(nil, pods), componentconfig.HairpinNone, "10.0.0.0/8", network.UseDefaultMTU)
 	if err != nil {
 		t.Fatalf("Failed to select the desired plugin: %v", err)
 	}
@@ -241,33 +223,12 @@ func TestCNIPlugin(t *testing.T) {
 	eo, eerr := ioutil.ReadFile(outputEnv)
 	outputFile := path.Join(testNetworkConfigPath, pluginName, pluginName+".out")
 	output, err := ioutil.ReadFile(outputFile)
-	if err != nil || eerr != nil {
+	if err != nil {
 		t.Errorf("Failed to read output file %s: %v (env %s err %v)", outputFile, err, eo, eerr)
 	}
-
 	expectedOutput := "ADD /proc/12345/ns/net podNamespace podName test_infra_container"
 	if string(output) != expectedOutput {
 		t.Errorf("Mismatch in expected output for setup hook. Expected '%s', got '%s'", expectedOutput, string(output))
-	}
-
-	// Verify the correct network configuration was passed
-	inputConfig := struct {
-		RuntimeConfig struct {
-			PortMappings []map[string]interface{} `json:"portMappings"`
-		} `json:"runtimeConfig"`
-	}{}
-	inputFile := path.Join(testNetworkConfigPath, pluginName, pluginName+".in")
-	inputBytes, inerr := ioutil.ReadFile(inputFile)
-	parseerr := json.Unmarshal(inputBytes, &inputConfig)
-	if inerr != nil || parseerr != nil {
-		t.Errorf("failed to parse reported cni input config %s: (%v %v)", inputFile, inerr, parseerr)
-	}
-	expectedMappings := []map[string]interface{}{
-		// hah, golang always unmarshals unstructured json numbers as float64
-		{"hostPort": 8008.0, "containerPort": 80.0, "protocol": "udp", "hostIP": "0.0.0.0"},
-	}
-	if !reflect.DeepEqual(inputConfig.RuntimeConfig.PortMappings, expectedMappings) {
-		t.Errorf("mismatch in expected port mappings. expected %v got %v", expectedMappings, inputConfig.RuntimeConfig.PortMappings)
 	}
 
 	// Get its IP address

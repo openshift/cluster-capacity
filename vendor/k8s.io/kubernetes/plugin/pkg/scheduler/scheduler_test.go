@@ -97,13 +97,6 @@ func (es mockScheduler) Schedule(pod *v1.Pod, ml algorithm.NodeLister) (string, 
 	return es.machine, es.err
 }
 
-func (es mockScheduler) Predicates() map[string]algorithm.FitPredicate {
-	return nil
-}
-func (es mockScheduler) Prioritizers() []algorithm.PriorityConfig {
-	return nil
-}
-
 func TestScheduler(t *testing.T) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(t.Logf).Stop()
@@ -154,34 +147,31 @@ func TestScheduler(t *testing.T) {
 		var gotPod *v1.Pod
 		var gotAssumedPod *v1.Pod
 		var gotBinding *v1.Binding
-		configurator := &FakeConfigurator{
-			Config: &Config{
-				SchedulerCache: &schedulertesting.FakeCache{
-					AssumeFunc: func(pod *v1.Pod) {
-						gotAssumedPod = pod
-					},
+		c := &Config{
+			SchedulerCache: &schedulertesting.FakeCache{
+				AssumeFunc: func(pod *v1.Pod) {
+					gotAssumedPod = pod
 				},
-				NodeLister: schedulertesting.FakeNodeLister(
-					[]*v1.Node{&testNode},
-				),
-				Algorithm: item.algo,
-				Binder: fakeBinder{func(b *v1.Binding) error {
-					gotBinding = b
-					return item.injectBindError
-				}},
-				PodConditionUpdater: fakePodConditionUpdater{},
-				Error: func(p *v1.Pod, err error) {
-					gotPod = p
-					gotError = err
-				},
-				NextPod: func() *v1.Pod {
-					return item.sendPod
-				},
-				Recorder: eventBroadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "scheduler"}),
 			},
+			NodeLister: schedulertesting.FakeNodeLister(
+				[]*v1.Node{&testNode},
+			),
+			Algorithm: item.algo,
+			Binder: fakeBinder{func(b *v1.Binding) error {
+				gotBinding = b
+				return item.injectBindError
+			}},
+			PodConditionUpdater: fakePodConditionUpdater{},
+			Error: func(p *v1.Pod, err error) {
+				gotPod = p
+				gotError = err
+			},
+			NextPod: func() *v1.Pod {
+				return item.sendPod
+			},
+			Recorder: eventBroadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "scheduler"}),
 		}
-
-		s, _ := NewFromConfigurator(configurator, nil...)
+		s := New(c)
 		called := make(chan struct{})
 		events := eventBroadcaster.StartEventWatcher(func(e *clientv1.Event) {
 			if e, a := item.eventReason, e.Reason; e != a {
@@ -490,7 +480,6 @@ func TestSchedulerFailedSchedulingReasons(t *testing.T) {
 func setupTestScheduler(queuedPodStore *clientcache.FIFO, scache schedulercache.Cache, nodeLister schedulertesting.FakeNodeLister, predicateMap map[string]algorithm.FitPredicate) (*Scheduler, chan *v1.Binding, chan error) {
 	algo := core.NewGenericScheduler(
 		scache,
-		nil,
 		predicateMap,
 		algorithm.EmptyMetadataProducer,
 		[]algorithm.PriorityConfig{},
@@ -498,67 +487,53 @@ func setupTestScheduler(queuedPodStore *clientcache.FIFO, scache schedulercache.
 		[]algorithm.SchedulerExtender{})
 	bindingChan := make(chan *v1.Binding, 1)
 	errChan := make(chan error, 1)
-	configurator := &FakeConfigurator{
-		Config: &Config{
-			SchedulerCache: scache,
-			NodeLister:     nodeLister,
-			Algorithm:      algo,
-			Binder: fakeBinder{func(b *v1.Binding) error {
-				bindingChan <- b
-				return nil
-			}},
-			NextPod: func() *v1.Pod {
-				return clientcache.Pop(queuedPodStore).(*v1.Pod)
-			},
-			Error: func(p *v1.Pod, err error) {
-				errChan <- err
-			},
-			Recorder:            &record.FakeRecorder{},
-			PodConditionUpdater: fakePodConditionUpdater{},
+	cfg := &Config{
+		SchedulerCache: scache,
+		NodeLister:     nodeLister,
+		Algorithm:      algo,
+		Binder: fakeBinder{func(b *v1.Binding) error {
+			bindingChan <- b
+			return nil
+		}},
+		NextPod: func() *v1.Pod {
+			return clientcache.Pop(queuedPodStore).(*v1.Pod)
 		},
+		Error: func(p *v1.Pod, err error) {
+			errChan <- err
+		},
+		Recorder:            &record.FakeRecorder{},
+		PodConditionUpdater: fakePodConditionUpdater{},
 	}
-
-	sched, _ := NewFromConfigurator(configurator, nil...)
-
-	return sched, bindingChan, errChan
+	return New(cfg), bindingChan, errChan
 }
 
 func setupTestSchedulerLongBindingWithRetry(queuedPodStore *clientcache.FIFO, scache schedulercache.Cache, nodeLister schedulertesting.FakeNodeLister, predicateMap map[string]algorithm.FitPredicate, stop chan struct{}, bindingTime time.Duration) (*Scheduler, chan *v1.Binding) {
 	algo := core.NewGenericScheduler(
 		scache,
-		nil,
 		predicateMap,
 		algorithm.EmptyMetadataProducer,
 		[]algorithm.PriorityConfig{},
 		algorithm.EmptyMetadataProducer,
 		[]algorithm.SchedulerExtender{})
 	bindingChan := make(chan *v1.Binding, 2)
-	configurator := &FakeConfigurator{
-		Config: &Config{
-			SchedulerCache: scache,
-			NodeLister:     nodeLister,
-			Algorithm:      algo,
-			Binder: fakeBinder{func(b *v1.Binding) error {
-				time.Sleep(bindingTime)
-				bindingChan <- b
-				return nil
-			}},
-			WaitForCacheSync: func() bool {
-				return true
-			},
-			NextPod: func() *v1.Pod {
-				return clientcache.Pop(queuedPodStore).(*v1.Pod)
-			},
-			Error: func(p *v1.Pod, err error) {
-				queuedPodStore.AddIfNotPresent(p)
-			},
-			Recorder:            &record.FakeRecorder{},
-			PodConditionUpdater: fakePodConditionUpdater{},
-			StopEverything:      stop,
+	cfg := &Config{
+		SchedulerCache: scache,
+		NodeLister:     nodeLister,
+		Algorithm:      algo,
+		Binder: fakeBinder{func(b *v1.Binding) error {
+			time.Sleep(bindingTime)
+			bindingChan <- b
+			return nil
+		}},
+		NextPod: func() *v1.Pod {
+			return clientcache.Pop(queuedPodStore).(*v1.Pod)
 		},
+		Error: func(p *v1.Pod, err error) {
+			queuedPodStore.AddIfNotPresent(p)
+		},
+		Recorder:            &record.FakeRecorder{},
+		PodConditionUpdater: fakePodConditionUpdater{},
+		StopEverything:      stop,
 	}
-
-	sched, _ := NewFromConfigurator(configurator, nil...)
-
-	return sched, bindingChan
+	return New(cfg), bindingChan
 }

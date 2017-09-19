@@ -33,8 +33,6 @@ type FakePodSecurityPolicies struct {
 
 var podsecuritypoliciesResource = schema.GroupVersionResource{Group: "extensions", Version: "", Resource: "podsecuritypolicies"}
 
-var podsecuritypoliciesKind = schema.GroupVersionKind{Group: "extensions", Version: "", Kind: "PodSecurityPolicy"}
-
 func (c *FakePodSecurityPolicies) Create(podSecurityPolicy *extensions.PodSecurityPolicy) (result *extensions.PodSecurityPolicy, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootCreateAction(podsecuritypoliciesResource, podSecurityPolicy), &extensions.PodSecurityPolicy{})
@@ -77,7 +75,7 @@ func (c *FakePodSecurityPolicies) Get(name string, options v1.GetOptions) (resul
 
 func (c *FakePodSecurityPolicies) List(opts v1.ListOptions) (result *extensions.PodSecurityPolicyList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(podsecuritypoliciesResource, podsecuritypoliciesKind, opts), &extensions.PodSecurityPolicyList{})
+		Invokes(testing.NewRootListAction(podsecuritypoliciesResource, opts), &extensions.PodSecurityPolicyList{})
 	if obj == nil {
 		return nil, err
 	}

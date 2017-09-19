@@ -86,12 +86,9 @@ readonly KUBE_CONTAINER_RSYNC_PORT=8730
 # $1 - server architecture
 kube::build::get_docker_wrapped_binaries() {
   debian_iptables_version=v7
-  ### If you change any of these lists, please also update DOCKERIZED_BINARIES
-  ### in build/BUILD.
   case $1 in
     "amd64")
         local targets=(
-          cloud-controller-manager,busybox
           kube-apiserver,busybox
           kube-controller-manager,busybox
           kube-scheduler,busybox
@@ -100,7 +97,6 @@ kube::build::get_docker_wrapped_binaries() {
         );;
     "arm")
         local targets=(
-          cloud-controller-manager,armel/busybox
           kube-apiserver,armel/busybox
           kube-controller-manager,armel/busybox
           kube-scheduler,armel/busybox
@@ -109,7 +105,6 @@ kube::build::get_docker_wrapped_binaries() {
         );;
     "arm64")
         local targets=(
-          cloud-controller-manager,aarch64/busybox
           kube-apiserver,aarch64/busybox
           kube-controller-manager,aarch64/busybox
           kube-scheduler,aarch64/busybox
@@ -118,7 +113,6 @@ kube::build::get_docker_wrapped_binaries() {
         );;
     "ppc64le")
         local targets=(
-          cloud-controller-manager,ppc64le/busybox
           kube-apiserver,ppc64le/busybox
           kube-controller-manager,ppc64le/busybox
           kube-scheduler,ppc64le/busybox
@@ -127,7 +121,6 @@ kube::build::get_docker_wrapped_binaries() {
         );;
     "s390x")
         local targets=(
-          cloud-controller-manager,s390x/busybox
           kube-apiserver,s390x/busybox
           kube-controller-manager,s390x/busybox
           kube-scheduler,s390x/busybox
@@ -558,9 +551,6 @@ function kube::build::run_build_command_ex() {
     --env "KUBE_FASTBUILD=${KUBE_FASTBUILD:-false}"
     --env "KUBE_BUILDER_OS=${OSTYPE:-notdetected}"
     --env "KUBE_VERBOSE=${KUBE_VERBOSE}"
-    --env "GOFLAGS=${GOFLAGS:-}"
-    --env "GOLDFLAGS=${GOLDFLAGS:-}"
-    --env "GOGCFLAGS=${GOGCFLAGS:-}"
   )
 
   # If we have stdin we can run interactive.  This allows things like 'shell.sh'
@@ -600,8 +590,8 @@ function kube::build::rsync_probe {
   return 1
 }
 
-# Start up the rsync container in the background. This should be explicitly
-# stopped with kube::build::stop_rsyncd_container.
+# Start up the rsync container in the backgound.  This should be explicitly
+# stoped with kube::build::stop_rsyncd_container.
 #
 # This will set the global var KUBE_RSYNC_ADDR to the effective port that the
 # rsync daemon can be reached out.

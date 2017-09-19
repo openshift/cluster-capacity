@@ -22,12 +22,13 @@ package deletionhelper
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/federation/pkg/federation-controller/util"
-	finalizersutil "k8s.io/kubernetes/federation/pkg/federation-controller/util/finalizers"
+	"k8s.io/kubernetes/pkg/api"
 
 	"github.com/golang/glog"
 )
@@ -43,24 +44,37 @@ const (
 	FinalizerDeleteFromUnderlyingClusters string = "federation.kubernetes.io/delete-from-underlying-clusters"
 )
 
-type UpdateObjFunc func(runtime.Object) (runtime.Object, error)
+type HasFinalizerFunc func(runtime.Object, string) bool
+type RemoveFinalizerFunc func(runtime.Object, string) (runtime.Object, error)
+type AddFinalizerFunc func(runtime.Object, []string) (runtime.Object, error)
 type ObjNameFunc func(runtime.Object) string
 
 type DeletionHelper struct {
-	updateObjFunc UpdateObjFunc
-	objNameFunc   ObjNameFunc
-	informer      util.FederatedInformer
-	updater       util.FederatedUpdater
+	hasFinalizerFunc    HasFinalizerFunc
+	removeFinalizerFunc RemoveFinalizerFunc
+	addFinalizerFunc    AddFinalizerFunc
+	objNameFunc         ObjNameFunc
+	updateTimeout       time.Duration
+	eventRecorder       record.EventRecorder
+	informer            util.FederatedInformer
+	updater             util.FederatedUpdater
 }
 
 func NewDeletionHelper(
-	updateObjFunc UpdateObjFunc, objNameFunc ObjNameFunc,
-	informer util.FederatedInformer, updater util.FederatedUpdater) *DeletionHelper {
+	hasFinalizerFunc HasFinalizerFunc, removeFinalizerFunc RemoveFinalizerFunc,
+	addFinalizerFunc AddFinalizerFunc, objNameFunc ObjNameFunc,
+	updateTimeout time.Duration, eventRecorder record.EventRecorder,
+	informer util.FederatedInformer,
+	updater util.FederatedUpdater) *DeletionHelper {
 	return &DeletionHelper{
-		updateObjFunc: updateObjFunc,
-		objNameFunc:   objNameFunc,
-		informer:      informer,
-		updater:       updater,
+		hasFinalizerFunc:    hasFinalizerFunc,
+		removeFinalizerFunc: removeFinalizerFunc,
+		addFinalizerFunc:    addFinalizerFunc,
+		objNameFunc:         objNameFunc,
+		updateTimeout:       updateTimeout,
+		eventRecorder:       eventRecorder,
+		informer:            informer,
+		updater:             updater,
 	}
 }
 
@@ -75,24 +89,16 @@ func NewDeletionHelper(
 // This method should be called before creating objects in underlying clusters.
 func (dh *DeletionHelper) EnsureFinalizers(obj runtime.Object) (
 	runtime.Object, error) {
-	finalizers := sets.String{}
-	hasFinalizer, err := finalizersutil.HasFinalizer(obj, FinalizerDeleteFromUnderlyingClusters)
-	if err != nil {
-		return obj, err
+	finalizers := []string{}
+	if !dh.hasFinalizerFunc(obj, FinalizerDeleteFromUnderlyingClusters) {
+		finalizers = append(finalizers, FinalizerDeleteFromUnderlyingClusters)
 	}
-	if !hasFinalizer {
-		finalizers.Insert(FinalizerDeleteFromUnderlyingClusters)
+	if !dh.hasFinalizerFunc(obj, metav1.FinalizerOrphanDependents) {
+		finalizers = append(finalizers, metav1.FinalizerOrphanDependents)
 	}
-	hasFinalizer, err = finalizersutil.HasFinalizer(obj, metav1.FinalizerOrphanDependents)
-	if err != nil {
-		return obj, err
-	}
-	if !hasFinalizer {
-		finalizers.Insert(metav1.FinalizerOrphanDependents)
-	}
-	if finalizers.Len() != 0 {
-		glog.V(2).Infof("Adding finalizers %v to %s", finalizers.List(), dh.objNameFunc(obj))
-		return dh.addFinalizers(obj, finalizers)
+	if len(finalizers) != 0 {
+		glog.V(2).Infof("Adding finalizers %v to %s", finalizers, dh.objNameFunc(obj))
+		return dh.addFinalizerFunc(obj, finalizers)
 	}
 	return obj, nil
 }
@@ -107,25 +113,21 @@ func (dh *DeletionHelper) HandleObjectInUnderlyingClusters(obj runtime.Object) (
 	runtime.Object, error) {
 	objName := dh.objNameFunc(obj)
 	glog.V(2).Infof("Handling deletion of federated dependents for object: %s", objName)
-	hasFinalizer, err := finalizersutil.HasFinalizer(obj, FinalizerDeleteFromUnderlyingClusters)
-	if err != nil {
-		return obj, err
-	}
-	if !hasFinalizer {
+	if !dh.hasFinalizerFunc(obj, FinalizerDeleteFromUnderlyingClusters) {
 		glog.V(2).Infof("obj does not have %s finalizer. Nothing to do", FinalizerDeleteFromUnderlyingClusters)
 		return obj, nil
 	}
-	hasOrphanFinalizer, err := finalizersutil.HasFinalizer(obj, metav1.FinalizerOrphanDependents)
-	if err != nil {
-		return obj, err
-	}
+	hasOrphanFinalizer := dh.hasFinalizerFunc(obj, metav1.FinalizerOrphanDependents)
 	if hasOrphanFinalizer {
 		glog.V(2).Infof("Found finalizer orphan. Nothing to do, just remove the finalizer")
 		// If the obj has FinalizerOrphan finalizer, then we need to orphan the
 		// corresponding objects in underlying clusters.
 		// Just remove both the finalizers in that case.
-		finalizers := sets.NewString(FinalizerDeleteFromUnderlyingClusters, metav1.FinalizerOrphanDependents)
-		return dh.removeFinalizers(obj, finalizers)
+		obj, err := dh.removeFinalizerFunc(obj, FinalizerDeleteFromUnderlyingClusters)
+		if err != nil {
+			return obj, err
+		}
+		return dh.removeFinalizerFunc(obj, metav1.FinalizerOrphanDependents)
 	}
 
 	glog.V(2).Infof("Deleting obj %s from underlying clusters", objName)
@@ -149,10 +151,13 @@ func (dh *DeletionHelper) HandleObjectInUnderlyingClusters(obj runtime.Object) (
 			Type:        util.OperationTypeDelete,
 			ClusterName: clusterNsObj.ClusterName,
 			Obj:         clusterNsObj.Object.(runtime.Object),
-			Key:         objName,
 		})
 	}
-	err = dh.updater.Update(operations)
+	err = dh.updater.UpdateWithOnError(operations, dh.updateTimeout, func(op util.FederatedOperation, operror error) {
+		objName := dh.objNameFunc(op.Obj)
+		dh.eventRecorder.Eventf(obj, api.EventTypeNormal, "DeleteInClusterFailed",
+			"Failed to delete obj %s in cluster %s: %v", objName, op.ClusterName, operror)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute updates for obj %s: %v", objName, err)
 	}
@@ -178,33 +183,5 @@ func (dh *DeletionHelper) HandleObjectInUnderlyingClusters(obj runtime.Object) (
 	}
 
 	// All done. Just remove the finalizer.
-	return dh.removeFinalizers(obj, sets.NewString(FinalizerDeleteFromUnderlyingClusters))
-}
-
-// Adds the given finalizers to the given objects ObjectMeta.
-func (dh *DeletionHelper) addFinalizers(obj runtime.Object, finalizers sets.String) (runtime.Object, error) {
-	isUpdated, err := finalizersutil.AddFinalizers(obj, finalizers)
-	if err != nil || !isUpdated {
-		return obj, err
-	}
-	// Send the update to apiserver.
-	updatedObj, err := dh.updateObjFunc(obj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to add finalizers %v to object %s: %v", finalizers, dh.objNameFunc(obj), err)
-	}
-	return updatedObj, nil
-}
-
-// Removes the given finalizers from the given objects ObjectMeta.
-func (dh *DeletionHelper) removeFinalizers(obj runtime.Object, finalizers sets.String) (runtime.Object, error) {
-	isUpdated, err := finalizersutil.RemoveFinalizers(obj, finalizers)
-	if err != nil || !isUpdated {
-		return obj, err
-	}
-	// Send the update to apiserver.
-	updatedObj, err := dh.updateObjFunc(obj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove finalizers %v from object %s: %v", finalizers, dh.objNameFunc(obj), err)
-	}
-	return updatedObj, nil
+	return dh.removeFinalizerFunc(obj, FinalizerDeleteFromUnderlyingClusters)
 }

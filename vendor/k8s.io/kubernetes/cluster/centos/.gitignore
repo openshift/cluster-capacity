@@ -1,6 +1,5 @@
 binaries
 ca-cert
-etcd-cert
 
 master/bin/etcd
 master/bin/etcdctl

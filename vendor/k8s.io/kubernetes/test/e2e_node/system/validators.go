@@ -56,7 +56,6 @@ func ValidateDefault(runtime string) (error, error) {
 		&OSValidator{Reporter: DefaultReporter},
 		&KernelValidator{Reporter: DefaultReporter},
 		&CgroupsValidator{Reporter: DefaultReporter},
-		&packageValidator{reporter: DefaultReporter},
 	}
 	// Docker-specific validators.
 	var dockerValidators = []Validator{

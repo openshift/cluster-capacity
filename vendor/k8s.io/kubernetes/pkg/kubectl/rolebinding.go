@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/apis/rbac"
 )
 
@@ -55,29 +54,29 @@ func (s RoleBindingGeneratorV1) Generate(genericParams map[string]interface{}) (
 		return nil, err
 	}
 	delegate := &RoleBindingGeneratorV1{}
-	userStrings, found := genericParams["user"]
+	fromFileStrings, found := genericParams["user"]
 	if found {
-		fromFileArray, isArray := userStrings.([]string)
+		fromFileArray, isArray := fromFileStrings.([]string)
 		if !isArray {
-			return nil, fmt.Errorf("expected []string, found :%v", userStrings)
+			return nil, fmt.Errorf("expected []string, found :%v", fromFileStrings)
 		}
 		delegate.Users = fromFileArray
 		delete(genericParams, "user")
 	}
-	groupStrings, found := genericParams["group"]
+	fromLiteralStrings, found := genericParams["group"]
 	if found {
-		fromLiteralArray, isArray := groupStrings.([]string)
+		fromLiteralArray, isArray := fromLiteralStrings.([]string)
 		if !isArray {
-			return nil, fmt.Errorf("expected []string, found :%v", groupStrings)
+			return nil, fmt.Errorf("expected []string, found :%v", fromFileStrings)
 		}
 		delegate.Groups = fromLiteralArray
 		delete(genericParams, "group")
 	}
-	saStrings, found := genericParams["serviceaccount"]
+	fromSAStrings, found := genericParams["serviceaccount"]
 	if found {
-		fromLiteralArray, isArray := saStrings.([]string)
+		fromLiteralArray, isArray := fromSAStrings.([]string)
 		if !isArray {
-			return nil, fmt.Errorf("expected []string, found :%v", saStrings)
+			return nil, fmt.Errorf("expected []string, found :%v", fromFileStrings)
 		}
 		delegate.ServiceAccounts = fromLiteralArray
 		delete(genericParams, "serviceaccount")
@@ -131,23 +130,23 @@ func (s RoleBindingGeneratorV1) StructuredGenerate() (runtime.Object, error) {
 		}
 	}
 
-	for _, user := range sets.NewString(s.Users...).List() {
+	for _, user := range s.Users {
 		roleBinding.Subjects = append(roleBinding.Subjects, rbac.Subject{
 			Kind:     rbac.UserKind,
 			APIGroup: rbac.GroupName,
 			Name:     user,
 		})
 	}
-	for _, group := range sets.NewString(s.Groups...).List() {
+	for _, group := range s.Groups {
 		roleBinding.Subjects = append(roleBinding.Subjects, rbac.Subject{
 			Kind:     rbac.GroupKind,
 			APIGroup: rbac.GroupName,
 			Name:     group,
 		})
 	}
-	for _, sa := range sets.NewString(s.ServiceAccounts...).List() {
+	for _, sa := range s.ServiceAccounts {
 		tokens := strings.Split(sa, ":")
-		if len(tokens) != 2 || tokens[1] == "" {
+		if len(tokens) != 2 {
 			return nil, fmt.Errorf("serviceaccount must be <namespace>:<name>")
 		}
 		roleBinding.Subjects = append(roleBinding.Subjects, rbac.Subject{

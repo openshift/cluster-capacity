@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -29,11 +28,11 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/filters"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
-	kubeinformers "k8s.io/client-go/informers"
 	kubeclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
+	"k8s.io/kube-aggregator/pkg/apis/apiregistration/v1alpha1"
 	"k8s.io/kube-aggregator/pkg/apiserver"
 )
 
@@ -93,11 +92,12 @@ func (o *AggregatorOptions) AddFlags(fs *pflag.FlagSet) {
 // NewDefaultOptions builds a "normal" set of options.  You wouldn't normally expose this, but hyperkube isn't cobra compatible
 func NewDefaultOptions(out, err io.Writer) *AggregatorOptions {
 	o := &AggregatorOptions{
-		RecommendedOptions: genericoptions.NewRecommendedOptions(defaultEtcdPathPrefix, apiserver.Scheme, apiserver.Codecs.LegacyCodec(v1beta1.SchemeGroupVersion)),
+		RecommendedOptions: genericoptions.NewRecommendedOptions(defaultEtcdPathPrefix, api.Scheme, api.Codecs.LegacyCodec(v1alpha1.SchemeGroupVersion)),
 
 		StdOut: out,
 		StdErr: err,
 	}
+	o.RecommendedOptions.SecureServing.ServingOptions.BindPort = 443
 	return o
 }
 
@@ -111,11 +111,12 @@ func (o *AggregatorOptions) Complete() error {
 
 func (o AggregatorOptions) RunAggregator(stopCh <-chan struct{}) error {
 	// TODO have a "real" external address
-	if err := o.RecommendedOptions.SecureServing.MaybeDefaultWithSelfSignedCerts("localhost", nil, nil); err != nil {
+	if err := o.RecommendedOptions.SecureServing.MaybeDefaultWithSelfSignedCerts("localhost"); err != nil {
 		return fmt.Errorf("error creating self-signed certificates: %v", err)
 	}
 
-	serverConfig := genericapiserver.NewConfig(apiserver.Codecs)
+	serverConfig := genericapiserver.NewConfig().
+		WithSerializer(api.Codecs)
 
 	if err := o.RecommendedOptions.ApplyTo(serverConfig); err != nil {
 		return err
@@ -144,13 +145,10 @@ func (o AggregatorOptions) RunAggregator(stopCh <-chan struct{}) error {
 	if err != nil {
 		return err
 	}
-	kubeInformers := kubeinformers.NewSharedInformerFactory(coreAPIServerClient, 5*time.Minute)
-	serviceResolver := apiserver.NewClusterIPServiceResolver(kubeInformers.Core().V1().Services().Lister())
 
 	config := apiserver.Config{
-		GenericConfig:     serverConfig,
-		CoreKubeInformers: kubeInformers,
-		ServiceResolver:   serviceResolver,
+		GenericConfig:       serverConfig,
+		CoreAPIServerClient: coreAPIServerClient,
 	}
 
 	config.ProxyClientCert, err = ioutil.ReadFile(o.ProxyClientCertFile)
@@ -162,7 +160,7 @@ func (o AggregatorOptions) RunAggregator(stopCh <-chan struct{}) error {
 		return err
 	}
 
-	server, err := config.Complete().NewWithDelegate(genericapiserver.EmptyDelegate)
+	server, err := config.Complete().New(stopCh)
 	if err != nil {
 		return err
 	}

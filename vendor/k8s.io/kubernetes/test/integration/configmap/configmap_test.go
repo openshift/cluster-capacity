@@ -1,3 +1,5 @@
+// +build integration,!no-etcd
+
 /*
 Copyright 2015 The Kubernetes Authors.
 
@@ -32,8 +34,8 @@ import (
 
 // TestConfigMap tests apiserver-side behavior of creation of ConfigMaps and pods that consume them.
 func TestConfigMap(t *testing.T) {
-	_, s, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, s := framework.RunAMaster(nil)
+	defer s.Close()
 
 	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
 

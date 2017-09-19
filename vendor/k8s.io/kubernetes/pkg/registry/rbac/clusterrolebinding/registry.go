@@ -57,7 +57,7 @@ func (s *storage) ListClusterRoleBindings(ctx genericapirequest.Context, options
 }
 
 func (s *storage) CreateClusterRoleBinding(ctx genericapirequest.Context, clusterRoleBinding *rbac.ClusterRoleBinding) error {
-	_, err := s.Create(ctx, clusterRoleBinding, false)
+	_, err := s.Create(ctx, clusterRoleBinding)
 	return err
 }
 

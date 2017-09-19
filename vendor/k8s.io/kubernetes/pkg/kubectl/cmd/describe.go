@@ -24,7 +24,9 @@ import (
 	"github.com/spf13/cobra"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/kubectl"
@@ -47,9 +49,9 @@ var (
 		will first check for an exact match on TYPE and NAME_PREFIX. If no such resource
 		exists, it will output details for every resource that has a name prefixed with NAME_PREFIX.
 
-		` + validResources)
+		` + valid_resources)
 
-	describe_example = templates.Examples(i18n.T(`
+	describe_example = templates.Examples(`
 		# Describe a node
 		kubectl describe nodes kubernetes-node-emt8.c.myproject.internal
 
@@ -67,7 +69,7 @@ var (
 
 		# Describe all pods managed by the 'frontend' replication controller (rc-created pods
 		# get the name of the rc as a prefix in the pod the name).
-		kubectl describe pods frontend`))
+		kubectl describe pods frontend`)
 )
 
 func NewCmdDescribe(f cmdutil.Factory, out, cmdErr io.Writer) *cobra.Command {
@@ -111,16 +113,15 @@ func RunDescribe(f cmdutil.Factory, out, cmdErr io.Writer, cmd *cobra.Command, a
 		enforceNamespace = false
 	}
 	if len(args) == 0 && cmdutil.IsFilenameEmpty(options.Filenames) {
-		fmt.Fprint(cmdErr, "You must specify the type of resource to describe. ", validResources)
+		fmt.Fprint(cmdErr, "You must specify the type of resource to describe. ", valid_resources)
 		return cmdutil.UsageError(cmd, "Required resource not specified.")
 	}
 
-	builder, err := f.NewUnstructuredBuilder(true)
+	mapper, typer, err := f.UnstructuredObject()
 	if err != nil {
 		return err
 	}
-
-	r := builder.
+	r := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.UnstructuredClientForMapping), unstructured.UnstructuredJSONScheme).
 		ContinueOnError().
 		NamespaceParam(cmdNamespace).DefaultNamespace().AllNamespaces(allNamespaces).
 		FilenameParam(enforceNamespace, options).
@@ -137,7 +138,7 @@ func RunDescribe(f cmdutil.Factory, out, cmdErr io.Writer, cmd *cobra.Command, a
 	infos, err := r.Infos()
 	if err != nil {
 		if apierrors.IsNotFound(err) && len(args) == 2 {
-			return DescribeMatchingResources(f, cmdNamespace, args[0], args[1], describerSettings, out, err)
+			return DescribeMatchingResources(mapper, typer, f, cmdNamespace, args[0], args[1], describerSettings, out, err)
 		}
 		allErrs = append(allErrs, err)
 	}
@@ -175,12 +176,12 @@ func RunDescribe(f cmdutil.Factory, out, cmdErr io.Writer, cmd *cobra.Command, a
 	return utilerrors.NewAggregate(allErrs)
 }
 
-func DescribeMatchingResources(f cmdutil.Factory, namespace, rsrc, prefix string, describerSettings *printers.DescriberSettings, out io.Writer, originalError error) error {
+func DescribeMatchingResources(mapper meta.RESTMapper, typer runtime.ObjectTyper, f cmdutil.Factory, namespace, rsrc, prefix string, describerSettings *printers.DescriberSettings, out io.Writer, originalError error) error {
 	mapper, typer, err := f.UnstructuredObject()
 	if err != nil {
 		return err
 	}
-	r := resource.NewBuilder(mapper, f.CategoryExpander(), typer, resource.ClientMapperFunc(f.UnstructuredClientForMapping), unstructured.UnstructuredJSONScheme).
+	r := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.UnstructuredClientForMapping), unstructured.UnstructuredJSONScheme).
 		NamespaceParam(namespace).DefaultNamespace().
 		ResourceTypeOrNameArgs(true, rsrc).
 		SingleResourceType().

@@ -27,16 +27,19 @@ import (
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/probe"
+	httpprober "k8s.io/kubernetes/pkg/probe/http"
 )
 
 type REST struct {
-	GetServersToValidate func() map[string]*Server
+	GetServersToValidate func() map[string]Server
+	prober               httpprober.HTTPProber
 }
 
 // NewStorage returns a new REST.
-func NewStorage(serverRetriever func() map[string]*Server) *REST {
+func NewStorage(serverRetriever func() map[string]Server) *REST {
 	return &REST{
 		GetServersToValidate: serverRetriever,
+		prober:               httpprober.New(),
 	}
 }
 
@@ -57,7 +60,7 @@ func (rs *REST) List(ctx genericapirequest.Context, options *metainternalversion
 	wait.Add(len(servers))
 	statuses := make(chan api.ComponentStatus, len(servers))
 	for k, v := range servers {
-		go func(name string, server *Server) {
+		go func(name string, server Server) {
 			defer wait.Done()
 			status := rs.getComponentStatus(name, server)
 			statuses <- *status
@@ -94,8 +97,8 @@ func ToConditionStatus(s probe.Result) api.ConditionStatus {
 	}
 }
 
-func (rs *REST) getComponentStatus(name string, server *Server) *api.ComponentStatus {
-	status, msg, err := server.DoServerCheck()
+func (rs *REST) getComponentStatus(name string, server Server) *api.ComponentStatus {
+	status, msg, err := server.DoServerCheck(rs.prober)
 	errorMsg := ""
 	if err != nil {
 		errorMsg = err.Error()

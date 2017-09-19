@@ -50,16 +50,6 @@ type TokenAuthenticator struct {
 	lister internalversion.SecretNamespaceLister
 }
 
-// tokenErrorf prints a error message for a secret that has matched a bearer
-// token but fails to meet some other criteria.
-//
-//    tokenErrorf(secret, "has invalid value for key %s", key)
-//
-func tokenErrorf(s *api.Secret, format string, i ...interface{}) {
-	format = fmt.Sprintf("Bootstrap secret %s/%s matching bearer token ", s.Namespace, s.Name) + format
-	glog.V(3).Infof(format, i...)
-}
-
 // AuthenticateToken tries to match the provided token to a bootstrap token secret
 // in a given namespace. If found, it authenticates the token in the
 // "system:bootstrappers" group and with the "system:bootstrap:(token-id)" username.
@@ -96,36 +86,32 @@ func (t *TokenAuthenticator) AuthenticateToken(token string) (user.Info, bool, e
 	secret, err := t.lister.Get(secretName)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.V(3).Infof("No secret of name %s to match bootstrap bearer token", secretName)
 			return nil, false, nil
 		}
 		return nil, false, err
 	}
 
 	if string(secret.Type) != string(bootstrapapi.SecretTypeBootstrapToken) || secret.Data == nil {
-		tokenErrorf(secret, "has invalid type, expected %s.", bootstrapapi.SecretTypeBootstrapToken)
 		return nil, false, nil
 	}
 
 	ts := getSecretString(secret, bootstrapapi.BootstrapTokenSecretKey)
 	if subtle.ConstantTimeCompare([]byte(ts), []byte(tokenSecret)) != 1 {
-		tokenErrorf(secret, "has invalid value for key %s, expected %s.", bootstrapapi.BootstrapTokenSecretKey, tokenSecret)
 		return nil, false, nil
 	}
 
 	id := getSecretString(secret, bootstrapapi.BootstrapTokenIDKey)
 	if id != tokenID {
-		tokenErrorf(secret, "has invalid value for key %s, expected %s.", bootstrapapi.BootstrapTokenIDKey, tokenID)
 		return nil, false, nil
 	}
 
 	if isSecretExpired(secret) {
-		// logging done in isSecretExpired method.
 		return nil, false, nil
 	}
 
 	if getSecretString(secret, bootstrapapi.BootstrapTokenUsageAuthentication) != "true" {
-		tokenErrorf(secret, "not marked %s=true.", bootstrapapi.BootstrapTokenUsageAuthentication)
+		glog.V(3).Infof("Bearer token matching bootstrap Secret %s/%s not marked %s=true.",
+			secret.Namespace, secret.Name, bootstrapapi.BootstrapTokenUsageAuthentication)
 		return nil, false, nil
 	}
 
@@ -152,11 +138,13 @@ func isSecretExpired(secret *api.Secret) bool {
 	if len(expiration) > 0 {
 		expTime, err2 := time.Parse(time.RFC3339, expiration)
 		if err2 != nil {
-			tokenErrorf(secret, "has unparsable expiration time (%s). Treating as expired.", expiration)
+			glog.V(3).Infof("Unparseable expiration time (%s) in %s/%s Secret: %v. Treating as expired.",
+				expiration, secret.Namespace, secret.Name, err2)
 			return true
 		}
 		if time.Now().After(expTime) {
-			tokenErrorf(secret, "has expired.", expiration)
+			glog.V(3).Infof("Expired bootstrap token in %s/%s Secret: %v",
+				secret.Namespace, secret.Name, expiration)
 			return true
 		}
 	}

@@ -18,9 +18,7 @@ package upgrades
 
 import (
 	"fmt"
-	"time"
 
-	autoscalingv1 "k8s.io/kubernetes/pkg/apis/autoscaling/v1"
 	"k8s.io/kubernetes/test/e2e/common"
 	"k8s.io/kubernetes/test/e2e/framework"
 
@@ -29,8 +27,7 @@ import (
 
 // HPAUpgradeTest tests that HPA rescales target resource correctly before and after a cluster upgrade.
 type HPAUpgradeTest struct {
-	rc  *common.ResourceConsumer
-	hpa *autoscalingv1.HorizontalPodAutoscaler
+	rc *common.ResourceConsumer
 }
 
 func (HPAUpgradeTest) Name() string { return "hpa-upgrade" }
@@ -47,7 +44,7 @@ func (t *HPAUpgradeTest) Setup(f *framework.Framework) {
 		500, /* cpuLimit */
 		200, /* memLimit */
 		f)
-	t.hpa = common.CreateCPUHorizontalPodAutoscaler(
+	common.CreateCPUHorizontalPodAutoscaler(
 		t.rc,
 		20, /* targetCPUUtilizationPercent */
 		1,  /* minPods */
@@ -68,28 +65,26 @@ func (t *HPAUpgradeTest) Test(f *framework.Framework, done <-chan struct{}, upgr
 // Teardown cleans up any remaining resources.
 func (t *HPAUpgradeTest) Teardown(f *framework.Framework) {
 	// rely on the namespace deletion to clean up everything
-	common.DeleteHorizontalPodAutoscaler(t.rc, t.hpa.Name)
 	t.rc.CleanUp()
 }
 
 func (t *HPAUpgradeTest) test() {
-	const timeToWait = 15 * time.Minute
 	t.rc.Resume()
 
 	By(fmt.Sprintf("HPA scales to 1 replica: consume 10 millicores, target per pod 100 millicores, min pods 1."))
 	t.rc.ConsumeCPU(10) /* millicores */
 	By(fmt.Sprintf("HPA waits for 1 replica"))
-	t.rc.WaitForReplicas(1, timeToWait)
+	t.rc.WaitForReplicas(1)
 
 	By(fmt.Sprintf("HPA scales to 3 replicas: consume 250 millicores, target per pod 100 millicores."))
 	t.rc.ConsumeCPU(250) /* millicores */
 	By(fmt.Sprintf("HPA waits for 3 replicas"))
-	t.rc.WaitForReplicas(3, timeToWait)
+	t.rc.WaitForReplicas(3)
 
 	By(fmt.Sprintf("HPA scales to 5 replicas: consume 700 millicores, target per pod 100 millicores, max pods 5."))
 	t.rc.ConsumeCPU(700) /* millicores */
 	By(fmt.Sprintf("HPA waits for 5 replicas"))
-	t.rc.WaitForReplicas(5, timeToWait)
+	t.rc.WaitForReplicas(5)
 
 	// We need to pause background goroutines as during upgrade master is unavailable and requests issued by them fail.
 	t.rc.Pause()

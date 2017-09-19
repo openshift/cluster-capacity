@@ -1023,8 +1023,7 @@ var _ = framework.KubeDescribe("Projected", func() {
 	})
 })
 
-func doProjectedSecretE2EWithoutMapping(f *framework.Framework, defaultMode *int32,
-	secretName string, fsGroup *int64, uid *int64) {
+func doProjectedSecretE2EWithoutMapping(f *framework.Framework, defaultMode *int32, secretName string, fsGroup *int64, uid *int64) {
 	var (
 		volumeName      = "projected-secret-volume"
 		volumeMountPath = "/etc/projected-secret-volume"
@@ -1184,9 +1183,6 @@ func doProjectedSecretE2EWithMapping(f *framework.Framework, mode *int32) {
 }
 
 func doProjectedConfigMapE2EWithoutMappings(f *framework.Framework, uid, fsGroup int64, defaultMode *int32) {
-	userID := int64(uid)
-	groupID := int64(fsGroup)
-
 	var (
 		name            = "projected-configmap-test-volume-" + string(uuid.NewUUID())
 		volumeName      = "projected-configmap-volume"
@@ -1243,14 +1239,13 @@ func doProjectedConfigMapE2EWithoutMappings(f *framework.Framework, uid, fsGroup
 		},
 	}
 
-	if userID != 0 {
-		pod.Spec.SecurityContext.RunAsUser = &userID
+	if uid != 0 {
+		pod.Spec.SecurityContext.RunAsUser = &uid
 	}
 
-	if groupID != 0 {
-		pod.Spec.SecurityContext.FSGroup = &groupID
+	if fsGroup != 0 {
+		pod.Spec.SecurityContext.FSGroup = &fsGroup
 	}
-
 	if defaultMode != nil {
 		//pod.Spec.Volumes[0].VolumeSource.Projected.Sources[0].ConfigMap.DefaultMode = defaultMode
 		pod.Spec.Volumes[0].VolumeSource.Projected.DefaultMode = defaultMode
@@ -1268,9 +1263,6 @@ func doProjectedConfigMapE2EWithoutMappings(f *framework.Framework, uid, fsGroup
 }
 
 func doProjectedConfigMapE2EWithMappings(f *framework.Framework, uid, fsGroup int64, itemMode *int32) {
-	userID := int64(uid)
-	groupID := int64(fsGroup)
-
 	var (
 		name            = "projected-configmap-test-volume-map-" + string(uuid.NewUUID())
 		volumeName      = "projected-configmap-volume"
@@ -1334,14 +1326,13 @@ func doProjectedConfigMapE2EWithMappings(f *framework.Framework, uid, fsGroup in
 		},
 	}
 
-	if userID != 0 {
-		pod.Spec.SecurityContext.RunAsUser = &userID
+	if uid != 0 {
+		pod.Spec.SecurityContext.RunAsUser = &uid
 	}
 
-	if groupID != 0 {
-		pod.Spec.SecurityContext.FSGroup = &groupID
+	if fsGroup != 0 {
+		pod.Spec.SecurityContext.FSGroup = &fsGroup
 	}
-
 	if itemMode != nil {
 		//pod.Spec.Volumes[0].VolumeSource.ConfigMap.Items[0].Mode = itemMode
 		pod.Spec.Volumes[0].VolumeSource.Projected.DefaultMode = itemMode

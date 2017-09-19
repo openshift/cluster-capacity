@@ -27,11 +27,11 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-printError() {
+function printError {
   echo -e "${RED}$1${NC}"
 }
 
-printSuccess() {
+function printSuccess {
   echo -e "${GREEN}$1${NC}"
 }
 

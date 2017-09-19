@@ -17,48 +17,70 @@ limitations under the License.
 package apiserver
 
 import (
-	"errors"
 	"net/http"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
-	"k8s.io/apiserver/pkg/endpoints/request"
+	v1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/pkg/api"
 
 	apiregistrationapi "k8s.io/kube-aggregator/pkg/apis/apiregistration"
-	apiregistrationv1beta1api "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
+	apiregistrationv1alpha1api "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1alpha1"
+	informers "k8s.io/kube-aggregator/pkg/client/informers/internalversion/apiregistration/internalversion"
 	listers "k8s.io/kube-aggregator/pkg/client/listers/apiregistration/internalversion"
 )
+
+// WithAPIs adds the handling for /apis and /apis/<group: -apiregistration.k8s.io>.
+func WithAPIs(handler http.Handler, informer informers.APIServiceInformer, serviceLister v1listers.ServiceLister, endpointsLister v1listers.EndpointsLister) http.Handler {
+	apisHandler := &apisHandler{
+		lister:          informer.Lister(),
+		delegate:        handler,
+		serviceLister:   serviceLister,
+		endpointsLister: endpointsLister,
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		apisHandler.ServeHTTP(w, req)
+	})
+}
 
 // apisHandler serves the `/apis` endpoint.
 // This is registered as a filter so that it never collides with any explictly registered endpoints
 type apisHandler struct {
-	codecs serializer.CodecFactory
 	lister listers.APIServiceLister
-	mapper request.RequestContextMapper
+
+	serviceLister   v1listers.ServiceLister
+	endpointsLister v1listers.EndpointsLister
+
+	delegate http.Handler
 }
 
 var discoveryGroup = metav1.APIGroup{
 	Name: apiregistrationapi.GroupName,
 	Versions: []metav1.GroupVersionForDiscovery{
 		{
-			GroupVersion: apiregistrationv1beta1api.SchemeGroupVersion.String(),
-			Version:      apiregistrationv1beta1api.SchemeGroupVersion.Version,
+			GroupVersion: apiregistrationv1alpha1api.SchemeGroupVersion.String(),
+			Version:      apiregistrationv1alpha1api.SchemeGroupVersion.Version,
 		},
 	},
 	PreferredVersion: metav1.GroupVersionForDiscovery{
-		GroupVersion: apiregistrationv1beta1api.SchemeGroupVersion.String(),
-		Version:      apiregistrationv1beta1api.SchemeGroupVersion.Version,
+		GroupVersion: apiregistrationv1alpha1api.SchemeGroupVersion.String(),
+		Version:      apiregistrationv1alpha1api.SchemeGroupVersion.Version,
 	},
 }
 
 func (r *apisHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	ctx, ok := r.mapper.Get(req)
-	if !ok {
-		responsewriters.InternalError(w, req, errors.New("no context found for request"))
+	// if the URL is for OUR api group, serve it normally
+	if strings.HasPrefix(req.URL.Path+"/", "/apis/"+apiregistrationapi.GroupName+"/") {
+		r.delegate.ServeHTTP(w, req)
+		return
+	}
+	// don't handle URLs that aren't /apis
+	if req.URL.Path != "/apis" && req.URL.Path != "/apis/" {
+		r.delegate.ServeHTTP(w, req)
 		return
 	}
 
@@ -73,30 +95,54 @@ func (r *apisHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	apiServicesByGroup := apiregistrationapi.SortedByGroupAndVersion(apiServices)
+	apiServicesByGroup := apiregistrationapi.SortedByGroup(apiServices)
 	for _, apiGroupServers := range apiServicesByGroup {
 		// skip the legacy group
 		if len(apiGroupServers[0].Spec.Group) == 0 {
 			continue
 		}
-		discoveryGroup := convertToDiscoveryAPIGroup(apiGroupServers)
+		discoveryGroup := convertToDiscoveryAPIGroup(apiGroupServers, r.serviceLister, r.endpointsLister)
 		if discoveryGroup != nil {
 			discoveryGroupList.Groups = append(discoveryGroupList.Groups, *discoveryGroup)
 		}
 	}
 
-	responsewriters.WriteObjectNegotiated(ctx, r.codecs, schema.GroupVersion{}, w, req, http.StatusOK, discoveryGroupList)
+	json, err := runtime.Encode(api.Codecs.LegacyCodec(), discoveryGroupList)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := w.Write(json); err != nil {
+		panic(err)
+	}
 }
 
 // convertToDiscoveryAPIGroup takes apiservices in a single group and returns a discovery compatible object.
 // if none of the services are available, it will return nil.
-func convertToDiscoveryAPIGroup(apiServices []*apiregistrationapi.APIService) *metav1.APIGroup {
-	apiServicesByGroup := apiregistrationapi.SortedByGroupAndVersion(apiServices)[0]
+func convertToDiscoveryAPIGroup(apiServices []*apiregistrationapi.APIService, serviceLister v1listers.ServiceLister, endpointsLister v1listers.EndpointsLister) *metav1.APIGroup {
+	apiServicesByGroup := apiregistrationapi.SortedByGroup(apiServices)[0]
 
 	var discoveryGroup *metav1.APIGroup
 
 	for _, apiService := range apiServicesByGroup {
-		if !apiregistrationapi.IsAPIServiceConditionTrue(apiService, apiregistrationapi.Available) {
+		// skip any API services without actual services
+		if _, err := serviceLister.Services(apiService.Spec.Service.Namespace).Get(apiService.Spec.Service.Name); err != nil {
+			continue
+		}
+
+		hasActiveEndpoints := false
+		endpoints, err := endpointsLister.Endpoints(apiService.Spec.Service.Namespace).Get(apiService.Spec.Service.Name)
+		// skip any API services without endpoints
+		if err != nil {
+			continue
+		}
+		for _, subset := range endpoints.Subsets {
+			if len(subset.Addresses) > 0 {
+				hasActiveEndpoints = true
+				break
+			}
+		}
+		if !hasActiveEndpoints {
 			continue
 		}
 
@@ -124,19 +170,18 @@ func convertToDiscoveryAPIGroup(apiServices []*apiregistrationapi.APIService) *m
 
 // apiGroupHandler serves the `/apis/<group>` endpoint.
 type apiGroupHandler struct {
-	codecs        serializer.CodecFactory
-	groupName     string
-	contextMapper request.RequestContextMapper
+	groupName string
 
 	lister listers.APIServiceLister
 
-	delegate http.Handler
+	serviceLister   v1listers.ServiceLister
+	endpointsLister v1listers.EndpointsLister
 }
 
 func (r *apiGroupHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	ctx, ok := r.contextMapper.Get(req)
-	if !ok {
-		responsewriters.InternalError(w, req, errors.New("no context found for request"))
+	// don't handle URLs that aren't /apis/<groupName>
+	if req.URL.Path != "/apis/"+r.groupName && req.URL.Path != "/apis/"+r.groupName+"/" {
+		http.Error(w, "", http.StatusNotFound)
 		return
 	}
 
@@ -158,14 +203,21 @@ func (r *apiGroupHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(apiServicesForGroup) == 0 {
-		r.delegate.ServeHTTP(w, req)
+		http.Error(w, "", http.StatusNotFound)
 		return
 	}
 
-	discoveryGroup := convertToDiscoveryAPIGroup(apiServicesForGroup)
+	discoveryGroup := convertToDiscoveryAPIGroup(apiServicesForGroup, r.serviceLister, r.endpointsLister)
 	if discoveryGroup == nil {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
-	responsewriters.WriteObjectNegotiated(ctx, r.codecs, schema.GroupVersion{}, w, req, http.StatusOK, discoveryGroup)
+	json, err := runtime.Encode(api.Codecs.LegacyCodec(), discoveryGroup)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := w.Write(json); err != nil {
+		panic(err)
+	}
 }

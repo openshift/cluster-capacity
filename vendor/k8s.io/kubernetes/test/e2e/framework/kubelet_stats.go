@@ -28,18 +28,18 @@ import (
 	"text/tabwriter"
 	"time"
 
+	cadvisorapi "github.com/google/cadvisor/info/v1"
+	"github.com/prometheus/common/model"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
-	stats "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
+	"k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/stats"
 	kubeletmetrics "k8s.io/kubernetes/pkg/kubelet/metrics"
+	kubeletstats "k8s.io/kubernetes/pkg/kubelet/server/stats"
 	"k8s.io/kubernetes/pkg/master/ports"
 	"k8s.io/kubernetes/pkg/metrics"
-
-	"github.com/prometheus/common/model"
 )
 
 // KubeletMetric stores metrics scraped from the kubelet server's /metric endpoint.
@@ -102,19 +102,18 @@ func GetKubeletLatencyMetrics(ms metrics.KubeletMetrics) KubeletLatencyMetrics {
 	latencyMethods := sets.NewString(
 		kubeletmetrics.PodWorkerLatencyKey,
 		kubeletmetrics.PodWorkerStartLatencyKey,
+		kubeletmetrics.SyncPodsLatencyKey,
 		kubeletmetrics.PodStartLatencyKey,
+		kubeletmetrics.PodStatusLatencyKey,
+		kubeletmetrics.ContainerManagerOperationsKey,
 		kubeletmetrics.CgroupManagerOperationsKey,
 		kubeletmetrics.DockerOperationsLatencyKey,
 		kubeletmetrics.PodWorkerStartLatencyKey,
 		kubeletmetrics.PLEGRelistLatencyKey,
 	)
-	return GetKubeletMetrics(ms, latencyMethods)
-}
-
-func GetKubeletMetrics(ms metrics.KubeletMetrics, methods sets.String) KubeletLatencyMetrics {
 	var latencyMetrics KubeletLatencyMetrics
 	for method, samples := range ms {
-		if !methods.Has(method) {
+		if !latencyMethods.Has(method) {
 			continue
 		}
 		for _, sample := range samples {
@@ -277,8 +276,15 @@ func HighLatencyKubeletOperations(c clientset.Interface, threshold time.Duration
 	return badMetrics, nil
 }
 
-// getStatsSummary contacts kubelet for the container information.
-func getStatsSummary(c clientset.Interface, nodeName string) (*stats.Summary, error) {
+// getContainerInfo contacts kubelet for the container information. The "Stats"
+// in the returned ContainerInfo is subject to the requirements in statsRequest.
+// TODO: This function uses the deprecated kubelet stats API; it should be
+// removed.
+func getContainerInfo(c clientset.Interface, nodeName string, req *kubeletstats.StatsRequest) (map[string]cadvisorapi.ContainerInfo, error) {
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
 	subResourceProxyAvailable, err := ServerVersionGTE(SubResourceServiceAndNodeProxyVersion, c.Discovery())
 	if err != nil {
 		return nil, err
@@ -289,43 +295,40 @@ func getStatsSummary(c clientset.Interface, nodeName string) (*stats.Summary, er
 
 	var data []byte
 	if subResourceProxyAvailable {
-		data, err = c.Core().RESTClient().Get().
+		data, err = c.Core().RESTClient().Post().
 			Context(ctx).
 			Resource("nodes").
 			SubResource("proxy").
 			Name(fmt.Sprintf("%v:%v", nodeName, ports.KubeletPort)).
-			Suffix("stats/summary").
+			Suffix("stats/container").
+			SetHeader("Content-Type", "application/json").
+			Body(reqBody).
 			Do().Raw()
 
 	} else {
-		data, err = c.Core().RESTClient().Get().
+		data, err = c.Core().RESTClient().Post().
 			Context(ctx).
 			Prefix("proxy").
 			Resource("nodes").
 			Name(fmt.Sprintf("%v:%v", nodeName, ports.KubeletPort)).
-			Suffix("stats/summary").
+			Suffix("stats/container").
+			SetHeader("Content-Type", "application/json").
+			Body(reqBody).
 			Do().Raw()
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	summary := stats.Summary{}
-	err = json.Unmarshal(data, &summary)
+	var containers map[string]cadvisorapi.ContainerInfo
+	err = json.Unmarshal(data, &containers)
 	if err != nil {
 		return nil, err
 	}
-	return &summary, nil
+	return containers, nil
 }
 
-func removeUint64Ptr(ptr *uint64) uint64 {
-	if ptr == nil {
-		return 0
-	}
-	return *ptr
-}
-
-// getOneTimeResourceUsageOnNode queries the node's /stats/summary endpoint
+// getOneTimeResourceUsageOnNode queries the node's /stats/container endpoint
 // and returns the resource usage of all containerNames for the past
 // cpuInterval.
 // The acceptable range of the interval is 2s~120s. Be warned that as the
@@ -341,12 +344,18 @@ func removeUint64Ptr(ptr *uint64) uint64 {
 // the stats points in ContainerResourceUsage.CPUInterval.
 //
 // containerNames is a function returning a collection of container names in which
-// user is interested in.
+// user is interested in. ExpectMissingContainers is a flag which says if the test
+// should fail if one of containers listed by containerNames is missing on any node
+// (useful e.g. when looking for system containers or daemons). If set to true function
+// is more forgiving and ignores missing containers.
+// TODO: This function relies on the deprecated kubelet stats API and should be
+// removed and/or rewritten.
 func getOneTimeResourceUsageOnNode(
 	c clientset.Interface,
 	nodeName string,
 	cpuInterval time.Duration,
 	containerNames func() []string,
+	expectMissingContainers bool,
 ) (ResourceUsagePerContainer, error) {
 	const (
 		// cadvisor records stats about every second.
@@ -360,46 +369,40 @@ func getOneTimeResourceUsageOnNode(
 		return nil, fmt.Errorf("numStats needs to be > 1 and < %d", maxNumStatsToRequest)
 	}
 	// Get information of all containers on the node.
-	summary, err := getStatsSummary(c, nodeName)
+	containerInfos, err := getContainerInfo(c, nodeName, &kubeletstats.StatsRequest{
+		ContainerName: "/",
+		NumStats:      numStats,
+		Subcontainers: true,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	f := func(name string, newStats *stats.ContainerStats) *ContainerResourceUsage {
-		if newStats == nil || newStats.CPU == nil || newStats.Memory == nil {
-			return nil
-		}
+	f := func(name string, oldStats, newStats *cadvisorapi.ContainerStats) *ContainerResourceUsage {
 		return &ContainerResourceUsage{
 			Name:                    name,
-			Timestamp:               newStats.StartTime.Time,
-			CPUUsageInCores:         float64(removeUint64Ptr(newStats.CPU.UsageNanoCores)) / 1000000000,
-			MemoryUsageInBytes:      removeUint64Ptr(newStats.Memory.UsageBytes),
-			MemoryWorkingSetInBytes: removeUint64Ptr(newStats.Memory.WorkingSetBytes),
-			MemoryRSSInBytes:        removeUint64Ptr(newStats.Memory.RSSBytes),
-			CPUInterval:             0,
+			Timestamp:               newStats.Timestamp,
+			CPUUsageInCores:         float64(newStats.Cpu.Usage.Total-oldStats.Cpu.Usage.Total) / float64(newStats.Timestamp.Sub(oldStats.Timestamp).Nanoseconds()),
+			MemoryUsageInBytes:      newStats.Memory.Usage,
+			MemoryWorkingSetInBytes: newStats.Memory.WorkingSet,
+			MemoryRSSInBytes:        newStats.Memory.RSS,
+			CPUInterval:             newStats.Timestamp.Sub(oldStats.Timestamp),
 		}
 	}
 	// Process container infos that are relevant to us.
 	containers := containerNames()
 	usageMap := make(ResourceUsagePerContainer, len(containers))
-	observedContainers := []string{}
-	for _, pod := range summary.Pods {
-		for _, container := range pod.Containers {
-			isInteresting := false
-			for _, interestingContainerName := range containers {
-				if container.Name == interestingContainerName {
-					isInteresting = true
-					observedContainers = append(observedContainers, container.Name)
-					break
-				}
+	for _, name := range containers {
+		info, ok := containerInfos[name]
+		if !ok {
+			if !expectMissingContainers {
+				return nil, fmt.Errorf("missing info for container %q on node %q", name, nodeName)
 			}
-			if !isInteresting {
-				continue
-			}
-			if usage := f(pod.PodRef.Name+"/"+container.Name, &container); usage != nil {
-				usageMap[pod.PodRef.Name+"/"+container.Name] = usage
-			}
+			continue
 		}
+		first := info.Stats[0]
+		last := info.Stats[len(info.Stats)-1]
+		usageMap[name] = f(name, first, last)
 	}
 	return usageMap, nil
 }

@@ -22,7 +22,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/v1"
 	batchv1 "k8s.io/kubernetes/pkg/apis/batch/v1"
@@ -64,15 +63,13 @@ func (c *fakeSJControl) UpdateStatus(sj *batchv2alpha1.CronJob) (*batchv2alpha1.
 // jobControlInterface is an interface that knows how to add or delete jobs
 // created as an interface to allow testing.
 type jobControlInterface interface {
-	// GetJob retrieves a Job.
+	// GetJob retrieves a job
 	GetJob(namespace, name string) (*batchv1.Job, error)
-	// CreateJob creates new Jobs according to the spec.
+	// CreateJob creates new jobs according to the spec
 	CreateJob(namespace string, job *batchv1.Job) (*batchv1.Job, error)
-	// UpdateJob updates a Job.
+	// UpdateJob updates a job
 	UpdateJob(namespace string, job *batchv1.Job) (*batchv1.Job, error)
-	// PatchJob patches a Job.
-	PatchJob(namespace string, name string, pt types.PatchType, data []byte, subresources ...string) (*batchv1.Job, error)
-	// DeleteJob deletes the Job identified by name.
+	// DeleteJob deletes the job identified by name.
 	// TODO: delete by UID?
 	DeleteJob(namespace string, name string) error
 }
@@ -109,10 +106,6 @@ func (r realJobControl) UpdateJob(namespace string, job *batchv1.Job) (*batchv1.
 	return r.KubeClient.BatchV1().Jobs(namespace).Update(job)
 }
 
-func (r realJobControl) PatchJob(namespace string, name string, pt types.PatchType, data []byte, subresources ...string) (*batchv1.Job, error) {
-	return r.KubeClient.BatchV1().Jobs(namespace).Patch(name, pt, data, subresources...)
-}
-
 func (r realJobControl) CreateJob(namespace string, job *batchv1.Job) (*batchv1.Job, error) {
 	return r.KubeClient.BatchV1().Jobs(namespace).Create(job)
 }
@@ -127,9 +120,6 @@ type fakeJobControl struct {
 	Jobs          []batchv1.Job
 	DeleteJobName []string
 	Err           error
-	UpdateJobName []string
-	PatchJobName  []string
-	Patches       [][]byte
 }
 
 var _ jobControlInterface = &fakeJobControl{}
@@ -161,20 +151,7 @@ func (f *fakeJobControl) UpdateJob(namespace string, job *batchv1.Job) (*batchv1
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	f.UpdateJobName = append(f.UpdateJobName, job.Name)
 	return job, nil
-}
-
-func (f *fakeJobControl) PatchJob(namespace string, name string, pt types.PatchType, data []byte, subresources ...string) (*batchv1.Job, error) {
-	f.Lock()
-	defer f.Unlock()
-	if f.Err != nil {
-		return nil, f.Err
-	}
-	f.PatchJobName = append(f.PatchJobName, name)
-	f.Patches = append(f.Patches, data)
-	// We don't have anything to return. Just return something non-nil.
-	return &batchv1.Job{}, nil
 }
 
 func (f *fakeJobControl) DeleteJob(namespace string, name string) error {

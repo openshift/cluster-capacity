@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
+	extensions "k8s.io/kubernetes/pkg/apis/extensions"
 	v1beta1 "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 )
 
@@ -88,7 +89,7 @@ func (s ingressNamespaceLister) Get(name string) (*v1beta1.Ingress, error) {
 		return nil, err
 	}
 	if !exists {
-		return nil, errors.NewNotFound(v1beta1.Resource("ingress"), name)
+		return nil, errors.NewNotFound(extensions.Resource("ingress"), name)
 	}
 	return obj.(*v1beta1.Ingress), nil
 }

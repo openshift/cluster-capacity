@@ -1,5 +1,4 @@
 reviewers:
-  - bowei
   - deads2k
   - enisoc
   - erictune
@@ -26,10 +25,8 @@ reviewers:
   - spxtr
   - sttts
 approvers:
-  - bowei # for test/e2e/{dns*,network}.go
   - deads2k
   - enisoc
-  - eparis
   - erictune
   - fabianofranz # for test/e2e/kubectl.go
   - fejta

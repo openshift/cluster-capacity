@@ -23,7 +23,7 @@ package v1beta1
 type LocalSubjectAccessReviewListerExpansion interface{}
 
 // LocalSubjectAccessReviewNamespaceListerExpansion allows custom methods to be added to
-// LocalSubjectAccessReviewNamespaceLister.
+// LocalSubjectAccessReviewNamespaeLister.
 type LocalSubjectAccessReviewNamespaceListerExpansion interface{}
 
 // SelfSubjectAccessReviewListerExpansion allows custom methods to be added to

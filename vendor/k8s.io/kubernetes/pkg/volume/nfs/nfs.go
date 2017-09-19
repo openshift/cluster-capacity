@@ -195,15 +195,19 @@ func (nfsMounter *nfsMounter) CanMount() error {
 	exe := exec.New()
 	switch runtime.GOOS {
 	case "linux":
-		if _, err := exe.Command("/bin/ls", "/sbin/mount.nfs").CombinedOutput(); err != nil {
+		_, err1 := exe.Command("/bin/ls", "/sbin/mount.nfs").CombinedOutput()
+		_, err2 := exe.Command("/bin/ls", "/sbin/mount.nfs4").CombinedOutput()
+
+		if err1 != nil {
 			return fmt.Errorf("Required binary /sbin/mount.nfs is missing")
 		}
-		if _, err := exe.Command("/bin/ls", "/sbin/mount.nfs4").CombinedOutput(); err != nil {
+		if err2 != nil {
 			return fmt.Errorf("Required binary /sbin/mount.nfs4 is missing")
 		}
 		return nil
 	case "darwin":
-		if _, err := exe.Command("/bin/ls", "/sbin/mount_nfs").CombinedOutput(); err != nil {
+		_, err := exe.Command("/bin/ls", "/sbin/mount_nfs").CombinedOutput()
+		if err != nil {
 			return fmt.Errorf("Required binary /sbin/mount_nfs is missing")
 		}
 	}
@@ -242,9 +246,7 @@ func (b *nfsMounter) SetUpAt(dir string, fsGroup *int64) error {
 	if !notMnt {
 		return nil
 	}
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return err
-	}
+	os.MkdirAll(dir, 0750)
 	source := fmt.Sprintf("%s:%s", b.server, b.exportPath)
 	options := []string{}
 	if b.readOnly {

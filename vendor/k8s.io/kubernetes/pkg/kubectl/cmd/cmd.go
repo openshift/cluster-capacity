@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	bashCompletionFunc = `# call kubectl get $1,
+	bash_completion_func = `# call kubectl get $1,
 __kubectl_override_flag_list=(kubeconfig cluster user context namespace server)
 __kubectl_override_flags()
 {
@@ -76,26 +76,10 @@ __kubectl_get_namespaces()
     fi
 }
 
-__kubectl_config_get_contexts()
-{
-    __kubectl_parse_config "contexts"
-}
-
-__kubectl_config_get_clusters()
-{
-    __kubectl_parse_config "clusters"
-}
-
-__kubectl_config_get_users()
-{
-    __kubectl_parse_config "users"
-}
-
-# $1 has to be "contexts", "clusters" or "users"
-__kubectl_parse_config()
+__kubectl_get_contexts()
 {
     local template kubectl_out
-    template="{{ range .$1  }}{{ .name }} {{ end }}"
+    template="{{ range .contexts  }}{{ .name }} {{ end }}"
     if kubectl_out=$(kubectl config $(__kubectl_override_flags) -o template --template="${template}" view 2>/dev/null); then
         COMPREPLY=( $( compgen -W "${kubectl_out[*]}" -- "$cur" ) )
     fi
@@ -186,10 +170,6 @@ __custom_func() {
             __kubectl_get_resource_node
             return
             ;;
-        kubectl_config_use-context)
-            __kubectl_config_get_contexts
-            return
-            ;;
         *)
             ;;
     esac
@@ -199,17 +179,15 @@ __custom_func() {
 	// If you add a resource to this list, please also take a look at pkg/kubectl/kubectl.go
 	// and add a short forms entry in expandResourceShortcut() when appropriate.
 	// TODO: This should be populated using the discovery information from apiserver.
-	validResources = `Valid resource types include:
+	valid_resources = `Valid resource types include:
 
     * all
     * certificatesigningrequests (aka 'csr')
+    * clusters (valid only for federation apiservers)
     * clusterrolebindings
     * clusterroles
-    * clusters (valid only for federation apiservers)
     * componentstatuses (aka 'cs')
     * configmaps (aka 'cm')
-    * controllerrevisions
-    * cronjobs
     * daemonsets (aka 'ds')
     * deployments (aka 'deploy')
     * endpoints (aka 'ep')
@@ -219,13 +197,12 @@ __custom_func() {
     * jobs
     * limitranges (aka 'limits')
     * namespaces (aka 'ns')
-    * networkpolicies (aka 'netpol')
+    * networkpolicies
     * nodes (aka 'no')
     * persistentvolumeclaims (aka 'pvc')
     * persistentvolumes (aka 'pv')
-    * poddisruptionbudgets (aka 'pdb')
-    * podpreset
     * pods (aka 'po')
+    * poddisruptionbudgets (aka 'pdb')
     * podsecuritypolicies (aka 'psp')
     * podtemplates
     * replicasets (aka 'rs')
@@ -242,15 +219,6 @@ __custom_func() {
     `
 )
 
-var (
-	bash_completion_flags = map[string]string{
-		"namespace": "__kubectl_get_namespaces",
-		"context":   "__kubectl_config_get_contexts",
-		"cluster":   "__kubectl_config_get_clusters",
-		"user":      "__kubectl_config_get_users",
-	}
-)
-
 // NewKubectlCommand creates the `kubectl` command and its nested children.
 func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cobra.Command {
 	// Parent command to which all subcommands are added.
@@ -262,7 +230,7 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 
       Find more information at https://github.com/kubernetes/kubernetes.`),
 		Run: runHelp,
-		BashCompletionFunction: bashCompletionFunc,
+		BashCompletionFunction: bash_completion_func,
 	}
 
 	f.BindFlags(cmds.PersistentFlags())
@@ -285,7 +253,6 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 				NewCmdCreate(f, out, err),
 				NewCmdExposeService(f, out),
 				NewCmdRun(f, in, out, err),
-				deprecatedAlias("run-container", NewCmdRun(f, in, out, err)),
 				set.NewCmdSet(f, out, err),
 			},
 		},
@@ -303,9 +270,7 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 			Commands: []*cobra.Command{
 				rollout.NewCmdRollout(f, out, err),
 				NewCmdRollingUpdate(f, out),
-				deprecatedAlias("rollingupdate", NewCmdRollingUpdate(f, out)),
 				NewCmdScale(f, out),
-				deprecatedAlias("resize", NewCmdScale(f, out)),
 				NewCmdAutoscale(f, out),
 			},
 		},
@@ -314,7 +279,6 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 			Commands: []*cobra.Command{
 				NewCmdCertificate(f, out),
 				NewCmdClusterInfo(f, out),
-				deprecatedAlias("clusterinfo", NewCmdClusterInfo(f, out)),
 				NewCmdTop(f, out, err),
 				NewCmdCordon(f, out),
 				NewCmdUncordon(f, out),
@@ -331,7 +295,7 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 				NewCmdExec(f, in, out, err),
 				NewCmdPortForward(f, out, err),
 				NewCmdProxy(f, out),
-				NewCmdCp(f, out, err),
+				NewCmdCp(f, in, out, err),
 				auth.NewCmdAuth(f, out, err),
 			},
 		},
@@ -341,7 +305,6 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 				NewCmdApply(f, out, err),
 				NewCmdPatch(f, out),
 				NewCmdReplace(f, out),
-				deprecatedAlias("update", NewCmdReplace(f, out)),
 				NewCmdConvert(f, out),
 			},
 		},
@@ -350,7 +313,7 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 			Commands: []*cobra.Command{
 				NewCmdLabel(f, out),
 				NewCmdAnnotate(f, out),
-				NewCmdCompletion(out, ""),
+				NewCmdCompletion(f, out, ""),
 			},
 		},
 	}
@@ -358,27 +321,33 @@ func NewKubectlCommand(f cmdutil.Factory, in io.Reader, out, err io.Writer) *cob
 
 	filters := []string{
 		"options",
-		deprecated("kubectl", "delete", cmds, NewCmdStop(f, out)),
+		Deprecated("kubectl", "delete", cmds, NewCmdStop(f, out)),
 	}
 	templates.ActsAsRootCommand(cmds, filters, groups...)
 
-	for name, completion := range bash_completion_flags {
-		if cmds.Flag(name) != nil {
-			if cmds.Flag(name).Annotations == nil {
-				cmds.Flag(name).Annotations = map[string][]string{}
-			}
-			cmds.Flag(name).Annotations[cobra.BashCompCustom] = append(
-				cmds.Flag(name).Annotations[cobra.BashCompCustom],
-				completion,
-			)
+	if cmds.Flag("namespace") != nil {
+		if cmds.Flag("namespace").Annotations == nil {
+			cmds.Flag("namespace").Annotations = map[string][]string{}
 		}
+		cmds.Flag("namespace").Annotations[cobra.BashCompCustom] = append(
+			cmds.Flag("namespace").Annotations[cobra.BashCompCustom],
+			"__kubectl_get_namespaces",
+		)
+	}
+
+	if cmds.Flag("context") != nil {
+		if cmds.Flag("context").Annotations == nil {
+			cmds.Flag("context").Annotations = map[string][]string{}
+		}
+		cmds.Flag("context").Annotations[cobra.BashCompCustom] = append(
+			cmds.Flag("context").Annotations[cobra.BashCompCustom],
+			"__kubectl_get_contexts",
+		)
 	}
 
 	cmds.AddCommand(cmdconfig.NewCmdConfig(clientcmd.NewDefaultPathOptions(), out, err))
-	cmds.AddCommand(NewCmdPlugin(f, in, out, err))
 	cmds.AddCommand(NewCmdVersion(f, out))
 	cmds.AddCommand(NewCmdApiVersions(f, out))
-	cmds.AddCommand(deprecatedAlias("apiversions", NewCmdApiVersions(f, out)))
 	cmds.AddCommand(NewCmdOptions(out))
 
 	return cmds
@@ -392,26 +361,9 @@ func printDeprecationWarning(command, alias string) {
 	glog.Warningf("%s is DEPRECATED and will be removed in a future version. Use %s instead.", alias, command)
 }
 
-// deprecatedAlias is intended to be used to create a "wrapper" command around
-// an existing command. The wrapper works the same but prints a deprecation
-// message before running. This command is identical functionality.
-func deprecatedAlias(deprecatedVersion string, cmd *cobra.Command) *cobra.Command {
-	// Have to be careful here because Cobra automatically extracts the name
-	// of the command from the .Use field.
-	originalName := cmd.Name()
-
-	cmd.Use = deprecatedVersion
-	cmd.Deprecated = fmt.Sprintf("use %q instead", originalName)
-	cmd.Hidden = true
-	return cmd
-}
-
-// deprecated is similar to deprecatedAlias, but it is used for deprecations
-// that are not simple aliases; this command is actually a different
-// (deprecated) codepath.
-func deprecated(baseName, to string, parent, cmd *cobra.Command) string {
-	cmd.Long = fmt.Sprintf("Deprecated: all functionality can be found in \"%s %s\"", baseName, to)
-	cmd.Short = fmt.Sprintf("Deprecated: use %s", to)
+func Deprecated(baseName, to string, parent, cmd *cobra.Command) string {
+	cmd.Long = fmt.Sprintf("Deprecated: This command is deprecated, all its functionalities are covered by \"%s %s\"", baseName, to)
+	cmd.Short = fmt.Sprintf("Deprecated: %s", to)
 	parent.AddCommand(cmd)
 	return cmd.Name()
 }

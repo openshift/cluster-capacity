@@ -43,9 +43,8 @@ const (
 	limitRangerAnnotation = "kubernetes.io/limit-ranger"
 )
 
-// Register registers a plugin
-func Register(plugins *admission.Plugins) {
-	plugins.Register("LimitRanger", func(config io.Reader) (admission.Interface, error) {
+func init() {
+	admission.RegisterPlugin("LimitRanger", func(config io.Reader) (admission.Interface, error) {
 		return NewLimitRanger(&DefaultLimitRangerActions{})
 	})
 }

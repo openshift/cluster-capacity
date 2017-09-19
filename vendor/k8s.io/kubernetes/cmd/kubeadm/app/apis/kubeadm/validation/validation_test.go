@@ -45,26 +45,23 @@ func TestValidateTokenDiscovery(t *testing.T) {
 	}
 }
 
-func TestValidateAuthorizationModes(t *testing.T) {
+func TestValidateAuthorizationMode(t *testing.T) {
 	var tests = []struct {
-		s        []string
+		s        string
 		f        *field.Path
 		expected bool
 	}{
-		{[]string{""}, nil, false},
-		{[]string{"rBAC"}, nil, false},                       // not supported
-		{[]string{"rBAC", "Webhook"}, nil, false},            // not supported
-		{[]string{"RBAC", "Webhook", "Webhook"}, nil, false}, // not supported
-		{[]string{"not valid"}, nil, false},                  // not supported
-		{[]string{"RBAC"}, nil, true},                        // supported
-		{[]string{"Webhook"}, nil, true},                     // supported
-		{[]string{"RBAC", "Webhook"}, nil, true},             // supported
+		{"", nil, false},
+		{"rBAC", nil, false},      // not supported
+		{"not valid", nil, false}, // not supported
+		{"RBAC", nil, true},       // supported
+		{"Webhook", nil, true},    // supported
 	}
 	for _, rt := range tests {
-		actual := ValidateAuthorizationModes(rt.s, rt.f)
+		actual := ValidateAuthorizationMode(rt.s, rt.f)
 		if (len(actual) == 0) != rt.expected {
 			t.Errorf(
-				"failed ValidateAuthorizationModes:\n\texpected: %t\n\t  actual: %t",
+				"failed ValidateAuthorizationMode:\n\texpected: %t\n\t  actual: %t",
 				rt.expected,
 				(len(actual) == 0),
 			)
@@ -175,7 +172,7 @@ func TestValidateMasterConfiguration(t *testing.T) {
 	}{
 		{&kubeadm.MasterConfiguration{}, false},
 		{&kubeadm.MasterConfiguration{
-			AuthorizationModes: []string{"RBAC"},
+			AuthorizationMode: "RBAC",
 			Networking: kubeadm.Networking{
 				ServiceSubnet: "10.96.0.1/12",
 				DNSDomain:     "cluster.local",
@@ -183,7 +180,7 @@ func TestValidateMasterConfiguration(t *testing.T) {
 			CertificatesDir: "/some/cert/dir",
 		}, false},
 		{&kubeadm.MasterConfiguration{
-			AuthorizationModes: []string{"RBAC"},
+			AuthorizationMode: "RBAC",
 			Networking: kubeadm.Networking{
 				ServiceSubnet: "10.96.0.1/12",
 				DNSDomain:     "cluster.local",

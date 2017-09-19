@@ -31,7 +31,6 @@ import (
 	utilstrings "k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
 )
 
 // This is the primary entrypoint for volume plugins.
@@ -152,7 +151,7 @@ func (plugin *photonPersistentDiskPlugin) ConstructVolumeSpec(volumeSpecName, mo
 // Abstract interface to disk operations.
 type pdManager interface {
 	// Creates a volume
-	CreateVolume(provisioner *photonPersistentDiskProvisioner) (pdID string, volumeSizeGB int, fstype string, err error)
+	CreateVolume(provisioner *photonPersistentDiskProvisioner) (pdID string, volumeSizeGB int, err error)
 	// Deletes a volume
 	DeleteVolume(deleter *photonPersistentDiskDeleter) error
 }
@@ -343,17 +342,9 @@ func (plugin *photonPersistentDiskPlugin) newProvisionerInternal(options volume.
 }
 
 func (p *photonPersistentDiskProvisioner) Provision() (*v1.PersistentVolume, error) {
-	if !volume.AccessModesContainedInAll(p.plugin.GetAccessModes(), p.options.PVC.Spec.AccessModes) {
-		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", p.options.PVC.Spec.AccessModes, p.plugin.GetAccessModes())
-	}
-
-	pdID, sizeGB, fstype, err := p.manager.CreateVolume(p)
+	pdID, sizeGB, err := p.manager.CreateVolume(p)
 	if err != nil {
 		return nil, err
-	}
-
-	if fstype == "" {
-		fstype = "ext4"
 	}
 
 	pv := &v1.PersistentVolume{
@@ -361,7 +352,7 @@ func (p *photonPersistentDiskProvisioner) Provision() (*v1.PersistentVolume, err
 			Name:   p.options.PVName,
 			Labels: map[string]string{},
 			Annotations: map[string]string{
-				volumehelper.VolumeDynamicallyCreatedByKey: "photon-volume-dynamic-provisioner",
+				"kubernetes.io/createdby": "photon-volume-dynamic-provisioner",
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
@@ -373,7 +364,7 @@ func (p *photonPersistentDiskProvisioner) Provision() (*v1.PersistentVolume, err
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				PhotonPersistentDisk: &v1.PhotonPersistentDiskVolumeSource{
 					PdID:   pdID,
-					FSType: fstype,
+					FSType: "ext4",
 				},
 			},
 		},

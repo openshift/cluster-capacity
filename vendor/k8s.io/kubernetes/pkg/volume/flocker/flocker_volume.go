@@ -23,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/volume"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
 )
 
 type volumeManager interface {
@@ -55,9 +54,6 @@ type flockerVolumeProvisioner struct {
 var _ volume.Provisioner = &flockerVolumeProvisioner{}
 
 func (c *flockerVolumeProvisioner) Provision() (*v1.PersistentVolume, error) {
-	if !volume.AccessModesContainedInAll(c.plugin.GetAccessModes(), c.options.PVC.Spec.AccessModes) {
-		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", c.options.PVC.Spec.AccessModes, c.plugin.GetAccessModes())
-	}
 
 	if len(c.options.Parameters) > 0 {
 		return nil, fmt.Errorf("Provisioning failed: Specified at least one unsupported parameter")
@@ -77,7 +73,7 @@ func (c *flockerVolumeProvisioner) Provision() (*v1.PersistentVolume, error) {
 			Name:   c.options.PVName,
 			Labels: map[string]string{},
 			Annotations: map[string]string{
-				volumehelper.VolumeDynamicallyCreatedByKey: "flocker-dynamic-provisioner",
+				"kubernetes.io/createdby": "flocker-dynamic-provisioner",
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{

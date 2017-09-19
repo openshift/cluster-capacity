@@ -30,8 +30,7 @@ import (
 )
 
 type EtcdOptions struct {
-	StorageConfig                    storagebackend.Config
-	EncryptionProviderConfigFilepath string
+	StorageConfig storagebackend.Config
 
 	EtcdServersOverrides []string
 
@@ -40,11 +39,7 @@ type EtcdOptions struct {
 	DefaultStorageMediaType string
 	DeleteCollectionWorkers int
 	EnableGarbageCollection bool
-
-	// Set EnableWatchCache to false to disable all watch caches
-	EnableWatchCache bool
-	// Set DefaultWatchCacheSize to zero to disable watch caches for those resources that have no explicit cache size set
-	DefaultWatchCacheSize int
+	EnableWatchCache        bool
 }
 
 func NewEtcdOptions(backendConfig *storagebackend.Config) *EtcdOptions {
@@ -54,7 +49,6 @@ func NewEtcdOptions(backendConfig *storagebackend.Config) *EtcdOptions {
 		DeleteCollectionWorkers: 1,
 		EnableGarbageCollection: true,
 		EnableWatchCache:        true,
-		DefaultWatchCacheSize:   100,
 	}
 }
 
@@ -110,13 +104,10 @@ func (s *EtcdOptions) AddFlags(fs *pflag.FlagSet) {
 
 	fs.BoolVar(&s.StorageConfig.Quorum, "etcd-quorum-read", s.StorageConfig.Quorum,
 		"If true, enable quorum read.")
-
-	fs.StringVar(&s.EncryptionProviderConfigFilepath, "experimental-encryption-provider-config", s.EncryptionProviderConfigFilepath,
-		"The file containing configuration for encryption providers to be used for storing secrets in etcd")
 }
 
 func (s *EtcdOptions) ApplyTo(c *server.Config) error {
-	c.RESTOptionsGetter = &SimpleRestOptionsFactory{Options: *s}
+	c.RESTOptionsGetter = &simpleRestOptionsFactory{Options: *s}
 	return nil
 }
 
@@ -125,20 +116,20 @@ func (s *EtcdOptions) ApplyWithStorageFactoryTo(factory serverstorage.StorageFac
 	return nil
 }
 
-type SimpleRestOptionsFactory struct {
+type simpleRestOptionsFactory struct {
 	Options EtcdOptions
 }
 
-func (f *SimpleRestOptionsFactory) GetRESTOptions(resource schema.GroupResource) (generic.RESTOptions, error) {
+func (f *simpleRestOptionsFactory) GetRESTOptions(resource schema.GroupResource) (generic.RESTOptions, error) {
 	ret := generic.RESTOptions{
 		StorageConfig:           &f.Options.StorageConfig,
 		Decorator:               generic.UndecoratedStorage,
 		EnableGarbageCollection: f.Options.EnableGarbageCollection,
 		DeleteCollectionWorkers: f.Options.DeleteCollectionWorkers,
-		ResourcePrefix:          resource.Group + "/" + resource.Resource,
+		ResourcePrefix:          f.Options.StorageConfig.Prefix + "/" + resource.Group + "/" + resource.Resource,
 	}
 	if f.Options.EnableWatchCache {
-		ret.Decorator = genericregistry.StorageWithCacher(f.Options.DefaultWatchCacheSize)
+		ret.Decorator = genericregistry.StorageWithCacher
 	}
 	return ret, nil
 }
@@ -162,7 +153,7 @@ func (f *storageFactoryRestOptionsFactory) GetRESTOptions(resource schema.GroupR
 		ResourcePrefix:          f.StorageFactory.ResourcePrefix(resource),
 	}
 	if f.Options.EnableWatchCache {
-		ret.Decorator = genericregistry.StorageWithCacher(f.Options.DefaultWatchCacheSize)
+		ret.Decorator = genericregistry.StorageWithCacher
 	}
 
 	return ret, nil
