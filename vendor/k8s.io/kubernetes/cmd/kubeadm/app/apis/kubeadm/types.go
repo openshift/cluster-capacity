@@ -24,6 +24,7 @@ import (
 
 type EnvParams struct {
 	KubernetesDir    string
+	HostEtcdPath     string
 	HyperkubeImage   string
 	RepositoryPrefix string
 	EtcdImage        string
@@ -32,12 +33,12 @@ type EnvParams struct {
 type MasterConfiguration struct {
 	metav1.TypeMeta
 
-	API                API
-	Etcd               Etcd
-	Networking         Networking
-	KubernetesVersion  string
-	CloudProvider      string
-	AuthorizationModes []string
+	API               API
+	Etcd              Etcd
+	Networking        Networking
+	KubernetesVersion string
+	CloudProvider     string
+	AuthorizationMode string
 
 	Token    string
 	TokenTTL time.Duration
@@ -81,8 +82,6 @@ type Etcd struct {
 	CAFile    string
 	CertFile  string
 	KeyFile   string
-	DataDir   string
-	ExtraArgs map[string]string
 }
 
 type NodeConfiguration struct {

@@ -37,6 +37,7 @@ type createClusterOptions struct {
 	configAccess          clientcmd.ConfigAccess
 	name                  string
 	server                flag.StringFlag
+	apiVersion            flag.StringFlag
 	insecureSkipTLSVerify flag.Tristate
 	certificateAuthority  flag.StringFlag
 	embedCAData           flag.Tristate
@@ -68,7 +69,10 @@ func NewCmdConfigSetCluster(out io.Writer, configAccess clientcmd.ConfigAccess) 
 		Long:    create_cluster_long,
 		Example: create_cluster_example,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(options.complete(cmd))
+			if !options.complete(cmd) {
+				return
+			}
+
 			cmdutil.CheckErr(options.run())
 			fmt.Fprintf(out, "Cluster %q set.\n", options.name)
 		},
@@ -77,6 +81,7 @@ func NewCmdConfigSetCluster(out io.Writer, configAccess clientcmd.ConfigAccess) 
 	options.insecureSkipTLSVerify.Default(false)
 
 	cmd.Flags().Var(&options.server, clientcmd.FlagAPIServer, clientcmd.FlagAPIServer+" for the cluster entry in kubeconfig")
+	cmd.Flags().Var(&options.apiVersion, clientcmd.FlagAPIVersion, clientcmd.FlagAPIVersion+" for the cluster entry in kubeconfig")
 	f := cmd.Flags().VarPF(&options.insecureSkipTLSVerify, clientcmd.FlagInsecure, "", clientcmd.FlagInsecure+" for the cluster entry in kubeconfig")
 	f.NoOptDefVal = "true"
 	cmd.Flags().Var(&options.certificateAuthority, clientcmd.FlagCAFile, "path to "+clientcmd.FlagCAFile+" file for the cluster entry in kubeconfig")
@@ -147,15 +152,15 @@ func (o *createClusterOptions) modifyCluster(existingCluster clientcmdapi.Cluste
 	return modifiedCluster
 }
 
-func (o *createClusterOptions) complete(cmd *cobra.Command) error {
+func (o *createClusterOptions) complete(cmd *cobra.Command) bool {
 	args := cmd.Flags().Args()
 	if len(args) != 1 {
 		cmd.Help()
-		return fmt.Errorf("Unexpected args: %v", args)
+		return false
 	}
 
 	o.name = args[0]
-	return nil
+	return true
 }
 
 func (o createClusterOptions) validate() error {

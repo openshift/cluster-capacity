@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/storage"
 )
@@ -44,15 +45,15 @@ func (a APIObjectVersioner) UpdateObject(obj runtime.Object, resourceVersion uin
 
 // UpdateList implements Versioner
 func (a APIObjectVersioner) UpdateList(obj runtime.Object, resourceVersion uint64) error {
-	listAccessor, err := meta.ListAccessor(obj)
-	if err != nil || listAccessor == nil {
+	listMeta, err := metav1.ListMetaFor(obj)
+	if err != nil || listMeta == nil {
 		return err
 	}
 	versionString := ""
 	if resourceVersion != 0 {
 		versionString = strconv.FormatUint(resourceVersion, 10)
 	}
-	listAccessor.SetResourceVersion(versionString)
+	listMeta.ResourceVersion = versionString
 	return nil
 }
 

@@ -17,6 +17,7 @@ limitations under the License.
 package flexvolume
 
 import (
+	"fmt"
 	"github.com/golang/glog"
 
 	"k8s.io/kubernetes/pkg/volume"
@@ -29,9 +30,13 @@ type mounterDefaults flexVolumeMounter
 func (f *mounterDefaults) SetUpAt(dir string, fsGroup *int64) error {
 	glog.Warning(logPrefix(f.plugin), "using default SetUpAt to ", dir)
 
-	src, err := f.plugin.getDeviceMountPath(f.spec)
+	a, err := f.plugin.NewAttacher()
 	if err != nil {
-		return err
+		return fmt.Errorf("NewAttacher failed: %v", err)
+	}
+	src, err := a.GetDeviceMountPath(f.spec)
+	if err != nil {
+		return fmt.Errorf("GetDeviceMountPath failed: %v", err)
 	}
 
 	if err := doMount(f.mounter, src, dir, "auto", []string{"bind"}); err != nil {

@@ -18,8 +18,8 @@ go_library(
     ],
     tags = ["automanaged"],
     deps = [
-        "//vendor/github.com/golang/glog:go_default_library",
-        "//vendor/k8s.io/apimachinery/pkg/util/errors:go_default_library",
+        "//vendor:github.com/golang/glog",
+        "//vendor:k8s.io/apimachinery/pkg/util/errors",
     ],
 )
 
@@ -33,7 +33,7 @@ go_test(
     tags = [
         "automanaged",
     ],
-    deps = ["//vendor/github.com/stretchr/testify/assert:go_default_library"],
+    deps = ["//vendor:github.com/stretchr/testify/assert"],
 )
 
 filegroup(

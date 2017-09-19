@@ -25,12 +25,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
-	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/volume"
 )
@@ -140,28 +135,10 @@ func (util *CinderDiskUtil) DeleteVolume(cd *cinderVolumeDeleter) error {
 	return nil
 }
 
-func getZonesFromNodes(kubeClient clientset.Interface) (sets.String, error) {
-	// TODO: caching, currently it is overkill because it calls this function
-	// only when it creates dynamic PV
-	zones := make(sets.String)
-	nodes, err := kubeClient.Core().Nodes().List(metav1.ListOptions{})
-	if err != nil {
-		glog.V(2).Infof("Error listing nodes")
-		return zones, err
-	}
-	for _, node := range nodes.Items {
-		if zone, ok := node.Labels[kubeletapis.LabelZoneFailureDomain]; ok {
-			zones.Insert(zone)
-		}
-	}
-	glog.V(4).Infof("zones found: %v", zones)
-	return zones, nil
-}
-
-func (util *CinderDiskUtil) CreateVolume(c *cinderVolumeProvisioner) (volumeID string, volumeSizeGB int, volumeLabels map[string]string, err error) {
+func (util *CinderDiskUtil) CreateVolume(c *cinderVolumeProvisioner) (volumeID string, volumeSizeGB int, err error) {
 	cloud, err := c.plugin.getCloudProvider()
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, err
 	}
 
 	capacity := c.options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
@@ -180,40 +157,21 @@ func (util *CinderDiskUtil) CreateVolume(c *cinderVolumeProvisioner) (volumeID s
 		case "availability":
 			availability = v
 		default:
-			return "", 0, nil, fmt.Errorf("invalid option %q for volume plugin %s", k, c.plugin.GetPluginName())
+			return "", 0, fmt.Errorf("invalid option %q for volume plugin %s", k, c.plugin.GetPluginName())
 		}
 	}
 	// TODO: implement PVC.Selector parsing
 	if c.options.PVC.Spec.Selector != nil {
-		return "", 0, nil, fmt.Errorf("claim.Spec.Selector is not supported for dynamic provisioning on Cinder")
+		return "", 0, fmt.Errorf("claim.Spec.Selector is not supported for dynamic provisioning on Cinder")
 	}
 
-	if availability == "" {
-		// No zone specified, choose one randomly in the same region
-		zones, err := getZonesFromNodes(c.plugin.host.GetKubeClient())
-		if err != nil {
-			glog.V(2).Infof("error getting zone information: %v", err)
-			return "", 0, nil, err
-		}
-		// if we did not get any zones, lets leave it blank and gophercloud will
-		// use zone "nova" as default
-		if len(zones) > 0 {
-			availability = volume.ChooseZoneForVolume(zones, c.options.PVC.Name)
-		}
+	name, err = cloud.CreateVolume(name, volSizeGB, vtype, availability, c.options.CloudTags)
+	if err != nil {
+		glog.V(2).Infof("Error creating cinder volume: %v", err)
+		return "", 0, err
 	}
-
-	volumeID, volumeAZ, errr := cloud.CreateVolume(name, volSizeGB, vtype, availability, c.options.CloudTags)
-	if errr != nil {
-		glog.V(2).Infof("Error creating cinder volume: %v", errr)
-		return "", 0, nil, errr
-	}
-	glog.V(2).Infof("Successfully created cinder volume %s", volumeID)
-
-	// these are needed that pod is spawning to same AZ
-	volumeLabels = make(map[string]string)
-	volumeLabels[kubeletapis.LabelZoneFailureDomain] = volumeAZ
-
-	return volumeID, volSizeGB, volumeLabels, nil
+	glog.V(2).Infof("Successfully created cinder volume %s", name)
+	return name, volSizeGB, nil
 }
 
 func probeAttachedVolume() error {

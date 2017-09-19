@@ -102,20 +102,14 @@ func (g *genClientForType) GenerateType(c *generator.Context, t *types.Type, w i
 	}
 	noMethods := extractBoolTagOrDie("noMethods", t.SecondClosestCommentLines) == true
 
-	readonly := extractBoolTagOrDie("readonly", t.SecondClosestCommentLines) == true
-
 	sw.Do(interfaceTemplate1, m)
 	if !noMethods {
-		if readonly {
-			sw.Do(interfaceTemplateReadonly, m)
-		} else {
-			sw.Do(interfaceTemplate2, m)
-			// Include the UpdateStatus method if the type has a status
-			if genStatus(t) {
-				sw.Do(interfaceUpdateStatusTemplate, m)
-			}
-			sw.Do(interfaceTemplate3, m)
+		sw.Do(interfaceTemplate2, m)
+		// Include the UpdateStatus method if the type has a status
+		if genStatus(t) {
+			sw.Do(interfaceUpdateStatusTemplate, m)
 		}
+		sw.Do(interfaceTemplate3, m)
 	}
 	sw.Do(interfaceTemplate4, m)
 
@@ -127,7 +121,7 @@ func (g *genClientForType) GenerateType(c *generator.Context, t *types.Type, w i
 		sw.Do(newStructNonNamespaced, m)
 	}
 
-	if !noMethods && !readonly {
+	if !noMethods {
 		sw.Do(createTemplate, m)
 		sw.Do(updateTemplate, m)
 		// Generate the UpdateStatus method if the type has a status
@@ -136,15 +130,9 @@ func (g *genClientForType) GenerateType(c *generator.Context, t *types.Type, w i
 		}
 		sw.Do(deleteTemplate, m)
 		sw.Do(deleteCollectionTemplate, m)
-	}
-
-	if !noMethods {
 		sw.Do(getTemplate, m)
 		sw.Do(listTemplate, m)
 		sw.Do(watchTemplate, m)
-	}
-
-	if !noMethods && !readonly {
 		sw.Do(patchTemplate, m)
 	}
 
@@ -188,11 +176,6 @@ var interfaceTemplate3 = `
 	List(opts $.ListOptions|raw$) (*$.type|raw$List, error)
 	Watch(opts $.ListOptions|raw$) ($.watchInterface|raw$, error)
 	Patch(name string, pt $.PatchType|raw$, data []byte, subresources ...string) (result *$.type|raw$, err error)`
-
-var interfaceTemplateReadonly = `
-	Get(name string, options $.GetOptions|raw$) (*$.type|raw$, error)
-	List(opts $.ListOptions|raw$) (*$.type|raw$List, error)
-	Watch(opts $.ListOptions|raw$) ($.watchInterface|raw$, error)`
 
 var interfaceTemplate4 = `
 	$.type|public$Expansion
@@ -241,7 +224,7 @@ func (c *$.type|privatePlural$) List(opts $.ListOptions|raw$) (result *$.type|ra
 	result = &$.type|raw$List{}
 	err = c.client.Get().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		VersionedParams(&opts, $.schemeParameterCodec|raw$).
 		Do().
 		Into(result)
@@ -254,7 +237,7 @@ func (c *$.type|privatePlural$) Get(name string, options $.GetOptions|raw$) (res
 	result = &$.type|raw${}
 	err = c.client.Get().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		Name(name).
 		VersionedParams(&options, $.schemeParameterCodec|raw$).
 		Do().
@@ -268,7 +251,7 @@ var deleteTemplate = `
 func (c *$.type|privatePlural$) Delete(name string, options *$.DeleteOptions|raw$) error {
 	return c.client.Delete().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		Name(name).
 		Body(options).
 		Do().
@@ -281,7 +264,7 @@ var deleteCollectionTemplate = `
 func (c *$.type|privatePlural$) DeleteCollection(options *$.DeleteOptions|raw$, listOptions $.ListOptions|raw$) error {
 	return c.client.Delete().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		VersionedParams(&listOptions, $.schemeParameterCodec|raw$).
 		Body(options).
 		Do().
@@ -295,7 +278,7 @@ func (c *$.type|privatePlural$) Create($.type|private$ *$.type|raw$) (result *$.
 	result = &$.type|raw${}
 	err = c.client.Post().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		Body($.type|private$).
 		Do().
 		Into(result)
@@ -309,7 +292,7 @@ func (c *$.type|privatePlural$) Update($.type|private$ *$.type|raw$) (result *$.
 	result = &$.type|raw${}
 	err = c.client.Put().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		Name($.type|private$.Name).
 		Body($.type|private$).
 		Do().
@@ -326,7 +309,7 @@ func (c *$.type|privatePlural$) UpdateStatus($.type|private$ *$.type|raw$) (resu
 	result = &$.type|raw${}
 	err = c.client.Put().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		Name($.type|private$.Name).
 		SubResource("status").
 		Body($.type|private$).
@@ -342,7 +325,7 @@ func (c *$.type|privatePlural$) Watch(opts $.ListOptions|raw$) ($.watchInterface
 	opts.Watch = true
 	return c.client.Get().
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		VersionedParams(&opts, $.schemeParameterCodec|raw$).
 		Watch()
 }
@@ -354,7 +337,7 @@ func (c *$.type|privatePlural$) Patch(name string, pt $.PatchType|raw$, data []b
 	result = &$.type|raw${}
 	err = c.client.Patch(pt).
 		$if .namespaced$Namespace(c.ns).$end$
-		Resource("$.type|resource$").
+		Resource("$.type|allLowercasePlural$").
 		SubResource(subresources...).
 		Name(name).
 		Body(data).

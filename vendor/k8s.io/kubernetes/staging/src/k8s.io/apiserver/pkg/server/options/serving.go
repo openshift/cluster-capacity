@@ -32,14 +32,16 @@ import (
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apiserver/pkg/server"
 	utilflag "k8s.io/apiserver/pkg/util/flag"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	certutil "k8s.io/client-go/util/cert"
 )
 
-type SecureServingOptions struct {
+type ServingOptions struct {
 	BindAddress net.IP
 	BindPort    int
+}
+
+type SecureServingOptions struct {
+	ServingOptions ServingOptions
 
 	// ServerCert is the TLS cert info for serving secure traffic
 	ServerCert GeneratableKeyCert
@@ -69,8 +71,10 @@ type GeneratableKeyCert struct {
 
 func NewSecureServingOptions() *SecureServingOptions {
 	return &SecureServingOptions{
-		BindAddress: net.ParseIP("0.0.0.0"),
-		BindPort:    443,
+		ServingOptions: ServingOptions{
+			BindAddress: net.ParseIP("0.0.0.0"),
+			BindPort:    443,
+		},
 		ServerCert: GeneratableKeyCert{
 			PairName:      "apiserver",
 			CertDirectory: "apiserver.local.config/certificates",
@@ -78,32 +82,28 @@ func NewSecureServingOptions() *SecureServingOptions {
 	}
 }
 
-func (s *SecureServingOptions) DefaultExternalAddress() (net.IP, error) {
-	return utilnet.ChooseBindAddress(s.BindAddress)
-}
-
 func (s *SecureServingOptions) Validate() []error {
 	errors := []error{}
-
-	if s.BindPort < 0 || s.BindPort > 65535 {
-		errors = append(errors, fmt.Errorf("--secure-port %v must be between 0 and 65535, inclusive. 0 for turning off secure port.", s.BindPort))
+	if s == nil {
+		return errors
 	}
 
+	errors = append(errors, s.ServingOptions.Validate("secure-port")...)
 	return errors
 }
 
 func (s *SecureServingOptions) AddFlags(fs *pflag.FlagSet) {
-	fs.IPVar(&s.BindAddress, "bind-address", s.BindAddress, ""+
+	fs.IPVar(&s.ServingOptions.BindAddress, "bind-address", s.ServingOptions.BindAddress, ""+
 		"The IP address on which to listen for the --secure-port port. The "+
 		"associated interface(s) must be reachable by the rest of the cluster, and by CLI/web "+
 		"clients. If blank, all interfaces will be used (0.0.0.0).")
 
-	fs.IntVar(&s.BindPort, "secure-port", s.BindPort, ""+
+	fs.IntVar(&s.ServingOptions.BindPort, "secure-port", s.ServingOptions.BindPort, ""+
 		"The port on which to serve HTTPS with authentication and authorization. If 0, "+
 		"don't serve HTTPS at all.")
 
 	fs.StringVar(&s.ServerCert.CertDirectory, "cert-dir", s.ServerCert.CertDirectory, ""+
-		"The directory where the TLS certs are located. "+
+		"The directory where the TLS certs are located (by default /var/run/kubernetes). "+
 		"If --tls-cert-file and --tls-private-key-file are provided, this flag will be ignored.")
 
 	fs.StringVar(&s.ServerCert.CertKey.CertFile, "tls-cert-file", s.ServerCert.CertKey.CertFile, ""+
@@ -127,17 +127,17 @@ func (s *SecureServingOptions) AddFlags(fs *pflag.FlagSet) {
 		"extracted. Non-wildcard matches trump over wildcard matches, explicit domain patterns "+
 		"trump over extracted names. For multiple key/certificate pairs, use the "+
 		"--tls-sni-cert-key multiple times. "+
-		"Examples: \"example.crt,example.key\" or \"foo.crt,foo.key:*.foo.com,foo.com\".")
+		"Examples: \"example.key,example.crt\" or \"*.foo.com,foo.com:foo.key,foo.crt\".")
 }
 
 func (s *SecureServingOptions) AddDeprecatedFlags(fs *pflag.FlagSet) {
-	fs.IPVar(&s.BindAddress, "public-address-override", s.BindAddress,
+	fs.IPVar(&s.ServingOptions.BindAddress, "public-address-override", s.ServingOptions.BindAddress,
 		"DEPRECATED: see --bind-address instead.")
 	fs.MarkDeprecated("public-address-override", "see --bind-address instead.")
 }
 
 func (s *SecureServingOptions) ApplyTo(c *server.Config) error {
-	if s.BindPort <= 0 {
+	if s.ServingOptions.BindPort <= 0 {
 		return nil
 	}
 	if err := s.applyServingInfoTo(c); err != nil {
@@ -169,23 +169,18 @@ func (s *SecureServingOptions) ApplyTo(c *server.Config) error {
 		c.SecureServingInfo.SNICerts[server.LoopbackClientServerNameOverride] = &tlsCert
 	}
 
-	// create shared informers
-	clientset, err := kubernetes.NewForConfig(c.LoopbackClientConfig)
-	if err != nil {
-		return err
-	}
-	c.SharedInformerFactory = informers.NewSharedInformerFactory(clientset, c.LoopbackClientConfig.Timeout)
-
 	return nil
 }
 
 func (s *SecureServingOptions) applyServingInfoTo(c *server.Config) error {
-	if s.BindPort <= 0 {
+	if s.ServingOptions.BindPort <= 0 {
 		return nil
 	}
 
 	secureServingInfo := &server.SecureServingInfo{
-		BindAddress: net.JoinHostPort(s.BindAddress.String(), strconv.Itoa(s.BindPort)),
+		ServingInfo: server.ServingInfo{
+			BindAddress: net.JoinHostPort(s.ServingOptions.BindAddress.String(), strconv.Itoa(s.ServingOptions.BindPort)),
+		},
 	}
 
 	serverCertFile, serverKeyFile := s.ServerCert.CertKey.CertFile, s.ServerCert.CertKey.KeyFile
@@ -236,17 +231,77 @@ func (s *SecureServingOptions) applyServingInfoTo(c *server.Config) error {
 	}
 
 	c.SecureServingInfo = secureServingInfo
-	c.ReadWritePort = s.BindPort
+	c.ReadWritePort = s.ServingOptions.BindPort
 
 	return nil
 }
 
-func (s *SecureServingOptions) MaybeDefaultWithSelfSignedCerts(publicAddress string, alternateDNS []string, alternateIPs []net.IP) error {
+func NewInsecureServingOptions() *ServingOptions {
+	return &ServingOptions{
+		BindAddress: net.ParseIP("127.0.0.1"),
+		BindPort:    8080,
+	}
+}
+
+func (s ServingOptions) Validate(portArg string) []error {
+	errors := []error{}
+
+	if s.BindPort < 0 || s.BindPort > 65535 {
+		errors = append(errors, fmt.Errorf("--%v %v must be between 0 and 65535, inclusive. 0 for turning off secure port.", portArg, s.BindPort))
+	}
+
+	return errors
+}
+
+func (s *ServingOptions) DefaultExternalAddress() (net.IP, error) {
+	return utilnet.ChooseBindAddress(s.BindAddress)
+}
+
+func (s *ServingOptions) AddFlags(fs *pflag.FlagSet) {
+	fs.IPVar(&s.BindAddress, "insecure-bind-address", s.BindAddress, ""+
+		"The IP address on which to serve the --insecure-port (set to 0.0.0.0 for all interfaces). "+
+		"Defaults to localhost.")
+
+	fs.IntVar(&s.BindPort, "insecure-port", s.BindPort, ""+
+		"The port on which to serve unsecured, unauthenticated access. Default 8080. It is assumed "+
+		"that firewall rules are set up such that this port is not reachable from outside of "+
+		"the cluster and that port 443 on the cluster's public address is proxied to this "+
+		"port. This is performed by nginx in the default setup.")
+}
+
+func (s *ServingOptions) AddDeprecatedFlags(fs *pflag.FlagSet) {
+	fs.IPVar(&s.BindAddress, "address", s.BindAddress,
+		"DEPRECATED: see --insecure-bind-address instead.")
+	fs.MarkDeprecated("address", "see --insecure-bind-address instead.")
+
+	fs.IntVar(&s.BindPort, "port", s.BindPort, "DEPRECATED: see --insecure-port instead.")
+	fs.MarkDeprecated("port", "see --insecure-port instead.")
+}
+
+func (s *ServingOptions) ApplyTo(c *server.Config) error {
+	if s.BindPort <= 0 {
+		return nil
+	}
+
+	c.InsecureServingInfo = &server.ServingInfo{
+		BindAddress: net.JoinHostPort(s.BindAddress.String(), strconv.Itoa(s.BindPort)),
+	}
+
+	var err error
+	privilegedLoopbackToken := uuid.NewRandom().String()
+	if c.LoopbackClientConfig, err = c.InsecureServingInfo.NewLoopbackClientConfig(privilegedLoopbackToken); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *SecureServingOptions) MaybeDefaultWithSelfSignedCerts(publicAddress string, alternateIPs ...net.IP) error {
 	if s == nil {
 		return nil
 	}
 	keyCert := &s.ServerCert.CertKey
-	if s.BindPort == 0 || len(keyCert.CertFile) != 0 || len(keyCert.KeyFile) != 0 {
+	if s.ServingOptions.BindPort == 0 || len(keyCert.CertFile) != 0 || len(keyCert.KeyFile) != 0 {
 		return nil
 	}
 
@@ -258,12 +313,17 @@ func (s *SecureServingOptions) MaybeDefaultWithSelfSignedCerts(publicAddress str
 		return err
 	}
 	if !canReadCertAndKey {
+		// TODO: It would be nice to set a fqdn subject alt name, but only the kubelets know, the apiserver is clueless
+		// alternateDNS = append(alternateDNS, "kubernetes.default.svc.CLUSTER.DNS.NAME")
+		// TODO (cjcullen): Is ClusterIP the right address to sign a cert with?
+		alternateDNS := []string{"kubernetes.default.svc", "kubernetes.default", "kubernetes"}
+
 		// add either the bind address or localhost to the valid alternates
-		bindIP := s.BindAddress.String()
+		bindIP := s.ServingOptions.BindAddress.String()
 		if bindIP == "0.0.0.0" {
 			alternateDNS = append(alternateDNS, "localhost")
 		} else {
-			alternateIPs = append(alternateIPs, s.BindAddress)
+			alternateIPs = append(alternateIPs, s.ServingOptions.BindAddress)
 		}
 
 		if cert, key, err := certutil.GenerateSelfSignedCertKey(publicAddress, alternateIPs, alternateDNS); err != nil {

@@ -18,10 +18,14 @@ package e2e_federation
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	federationapi "k8s.io/kubernetes/federation/apis/federation/v1beta1"
+	"k8s.io/kubernetes/federation/client/clientset_generated/federation_clientset"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
 	fedframework "k8s.io/kubernetes/test/e2e_federation/framework"
@@ -30,7 +34,6 @@ import (
 // Create/delete cluster api objects
 var _ = framework.KubeDescribe("Federation apiserver [Feature:Federation]", func() {
 	f := fedframework.NewDefaultFederatedFramework("federation-cluster")
-	testClusterPrefix := "test"
 
 	Describe("Cluster objects [Serial]", func() {
 		AfterEach(func() {
@@ -38,7 +41,7 @@ var _ = framework.KubeDescribe("Federation apiserver [Feature:Federation]", func
 
 			// Delete registered clusters.
 			// This is if a test failed, it should not affect other tests.
-			clusterList, err := f.FederationClientset.Federation().Clusters().List(metav1.ListOptions{LabelSelector: "prefix=" + testClusterPrefix})
+			clusterList, err := f.FederationClientset.Federation().Clusters().List(metav1.ListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			for _, cluster := range clusterList.Items {
 				err := f.FederationClientset.Federation().Clusters().Delete(cluster.Name, &metav1.DeleteOptions{})
@@ -51,30 +54,29 @@ var _ = framework.KubeDescribe("Federation apiserver [Feature:Federation]", func
 
 			contexts := f.GetUnderlyingFederatedContexts()
 
-			By(fmt.Sprintf("Creating %d cluster objects", len(contexts)))
+			framework.Logf("Creating %d cluster objects", len(contexts))
 			for _, context := range contexts {
-				createClusterObjectOrFail(f, &context, testClusterPrefix)
+				createClusterObjectOrFail(f, &context)
 			}
 
-			By(fmt.Sprintf("Checking that %d clusters are ready", len(contexts)))
+			framework.Logf("Checking that %d clusters are Ready", len(contexts))
 			for _, context := range contexts {
-				fedframework.ClusterIsReadyOrFail(f, context.Name)
+				clusterIsReadyOrFail(f, &context)
 			}
 			framework.Logf("%d clusters are Ready", len(contexts))
 
 			// Verify that deletion works.
 			framework.Logf("Deleting %d clusters", len(contexts))
 			for _, context := range contexts {
-				clusterName := testClusterPrefix + context.Name
-				framework.Logf("Deleting cluster object: %s (%s, secret: %s)", clusterName, context.Cluster.Cluster.Server, context.Name)
-				err := f.FederationClientset.Federation().Clusters().Delete(clusterName, &metav1.DeleteOptions{})
-				framework.ExpectNoError(err, fmt.Sprintf("unexpected error in deleting cluster %s: %+v", clusterName, err))
-				framework.Logf("Successfully deleted cluster object: %s (%s, secret: %s)", clusterName, context.Cluster.Cluster.Server, context.Name)
+				framework.Logf("Deleting cluster object: %s (%s, secret: %s)", context.Name, context.Cluster.Cluster.Server, context.Name)
+				err := f.FederationClientset.Federation().Clusters().Delete(context.Name, &metav1.DeleteOptions{})
+				framework.ExpectNoError(err, fmt.Sprintf("unexpected error in deleting cluster %s: %+v", context.Name, err))
+				framework.Logf("Successfully deleted cluster object: %s (%s, secret: %s)", context.Name, context.Cluster.Cluster.Server, context.Name)
 			}
 
 			// There should not be any remaining cluster.
-			framework.Logf("Verifying that zero test clusters remain")
-			clusterList, err := f.FederationClientset.Federation().Clusters().List(metav1.ListOptions{LabelSelector: "prefix=" + testClusterPrefix})
+			framework.Logf("Verifying that zero clusters remain")
+			clusterList, err := f.FederationClientset.Federation().Clusters().List(metav1.ListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			if len(clusterList.Items) != 0 {
 				framework.Failf("there should not have been any remaining clusters. Found: %+v", clusterList)
@@ -119,4 +121,20 @@ func newService(name, namespace string) *v1.Service {
 			},
 		},
 	}
+}
+
+// Verify that the cluster is marked ready.
+func isReady(clusterName string, clientset *federation_clientset.Clientset) error {
+	return wait.PollImmediate(time.Second, 5*time.Minute, func() (bool, error) {
+		c, err := clientset.Federation().Clusters().Get(clusterName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, condition := range c.Status.Conditions {
+			if condition.Type == federationapi.ClusterReady && condition.Status == v1.ConditionTrue {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
 }

@@ -1,3 +1,5 @@
+// +build integration,!no-etcd
+
 /*
 Copyright 2015 The Kubernetes Authors.
 
@@ -26,7 +28,7 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
-	storage "k8s.io/kubernetes/pkg/apis/storage/v1"
+	storage "k8s.io/kubernetes/pkg/apis/storage/v1beta1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/test/integration/framework"
 )
@@ -35,8 +37,8 @@ const provisionerPluginName = "kubernetes.io/mock-provisioner"
 
 // TestStorageClasses tests apiserver-side behavior of creation of storage class objects and their use by pvcs.
 func TestStorageClasses(t *testing.T) {
-	_, s, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, s := framework.RunAMaster(nil)
+	defer s.Close()
 
 	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
 
@@ -59,7 +61,7 @@ func DoTestStorageClasses(t *testing.T, client clientset.Interface, ns *v1.Names
 		Provisioner: provisionerPluginName,
 	}
 
-	if _, err := client.StorageV1().StorageClasses().Create(&s); err != nil {
+	if _, err := client.StorageV1beta1().StorageClasses().Create(&s); err != nil {
 		t.Errorf("unable to create test storage class: %v", err)
 	}
 	defer deleteStorageClassOrErrorf(t, client, s.Namespace, s.Name)
@@ -86,7 +88,7 @@ func DoTestStorageClasses(t *testing.T, client clientset.Interface, ns *v1.Names
 }
 
 func deleteStorageClassOrErrorf(t *testing.T, c clientset.Interface, ns, name string) {
-	if err := c.StorageV1().StorageClasses().Delete(name, nil); err != nil {
+	if err := c.StorageV1beta1().StorageClasses().Delete(name, nil); err != nil {
 		t.Errorf("unable to delete storage class %v: %v", name, err)
 	}
 }

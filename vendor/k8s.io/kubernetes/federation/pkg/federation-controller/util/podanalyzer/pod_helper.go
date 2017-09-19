@@ -68,7 +68,7 @@ func AnalysePods(selectorv1 *metav1.LabelSelector, allPods []util.FederatedObjec
 				} else {
 					if condition.Type == api_v1.PodScheduled &&
 						condition.Status == api_v1.ConditionFalse &&
-						condition.Reason == api_v1.PodReasonUnschedulable &&
+						condition.Reason == "Unschedulable" &&
 						condition.LastTransitionTime.Add(UnschedulableThreshold).Before(currentTime) {
 
 						status.Unschedulable++

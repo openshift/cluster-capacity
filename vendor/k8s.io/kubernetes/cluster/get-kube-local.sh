@@ -62,7 +62,6 @@ function create_cluster {
   --volume=/var/lib/docker/:/var/lib/docker:rw \
   --volume=/var/lib/kubelet/:/var/lib/kubelet:rw \
   --volume=/var/run:/var/run:rw \
-  --volume=/run/xtables.lock:/run/xtables.lock:rw \
   --net=host \
   --pid=host \
   --privileged=true \
@@ -81,7 +80,7 @@ function create_cluster {
 
   echo -e -n "\tWaiting for master components to start..."
   while true; do
-    local running_count=$(kubectl -s=http://${KUBE_HOST}:8080 get pods --no-headers --namespace=kube-system 2>/dev/null | grep "Running" | wc -l)
+    local running_count=$(kubectl -s=http://${KUBE_HOST}:8080 get pods --no-headers 2>/dev/null | grep "Running" | wc -l)
     # We expect to have 3 running pods - etcd, master and kube-proxy.
     if [ "$running_count" -ge 3 ]; then
       break

@@ -1,7 +1,10 @@
 ### hyperkube
 
 `hyperkube` is an all-in-one binary for the Kubernetes server components
-`hyperkube` is built for multiple architectures and _the image is pushed automatically on every release._
+Also, it's very easy to run this `hyperkube` setup dockerized.
+See https://github.com/kubernetes/kubernetes/blob/master/docs/devel/local-cluster/docker.md for up-to-date commands.
+
+`hyperkube` is built for multiple architectures and _pushed automatically on every release._
 
 #### How to release by hand
 
@@ -10,8 +13,6 @@
 $ build/run.sh make cross
 
 # Build for linux/amd64 (default)
-# export REGISTRY=$HOST/$ORG to switch from gcr.io/google_containers
-
 $ make push VERSION={target_version} ARCH=amd64
 # ---> gcr.io/google_containers/hyperkube-amd64:VERSION
 # ---> gcr.io/google_containers/hyperkube:VERSION (image with backwards-compatible naming)

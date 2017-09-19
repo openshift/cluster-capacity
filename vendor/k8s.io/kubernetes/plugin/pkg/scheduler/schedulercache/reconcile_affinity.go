@@ -19,7 +19,6 @@ package schedulercache
 import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/api/v1"
-	v1helper "k8s.io/kubernetes/pkg/api/v1/helper"
 	"k8s.io/kubernetes/pkg/features"
 )
 
@@ -35,7 +34,7 @@ import (
 func ReconcileAffinity(pod *v1.Pod) *v1.Affinity {
 	affinity := pod.Spec.Affinity
 	if utilfeature.DefaultFeatureGate.Enabled(features.AffinityInAnnotations) {
-		annotationsAffinity, _ := v1helper.GetAffinityFromPodAnnotations(pod.Annotations)
+		annotationsAffinity, _ := v1.GetAffinityFromPodAnnotations(pod.Annotations)
 		if affinity == nil && annotationsAffinity != nil {
 			affinity = annotationsAffinity
 		} else if annotationsAffinity != nil {

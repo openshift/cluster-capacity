@@ -63,8 +63,7 @@ func NewCmdConfig(pathOptions *clientcmd.PathOptions, out, errOut io.Writer) *co
 	cmd.AddCommand(NewCmdConfigGetContexts(out, pathOptions))
 	cmd.AddCommand(NewCmdConfigGetClusters(out, pathOptions))
 	cmd.AddCommand(NewCmdConfigDeleteCluster(out, pathOptions))
-	cmd.AddCommand(NewCmdConfigDeleteContext(out, errOut, pathOptions))
-	cmd.AddCommand(NewCmdConfigRenameContext(out, pathOptions))
+	cmd.AddCommand(NewCmdConfigDeleteContext(out, pathOptions))
 
 	return cmd
 }

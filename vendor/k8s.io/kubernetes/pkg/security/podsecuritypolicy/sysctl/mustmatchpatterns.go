@@ -22,10 +22,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/helper"
 )
 
-// mustMatchPatterns implements the SysctlsStrategy interface
+// mustMatchPatterns implements the CapabilitiesStrategy interface
 type mustMatchPatterns struct {
 	patterns []string
 }
@@ -60,7 +59,7 @@ func (s *mustMatchPatterns) validateAnnotation(pod *api.Pod, key string) field.E
 
 	fieldPath := field.NewPath("pod", "metadata", "annotations").Key(key)
 
-	sysctls, err := helper.SysctlsFromPodAnnotation(pod.Annotations[key])
+	sysctls, err := api.SysctlsFromPodAnnotation(pod.Annotations[key])
 	if err != nil {
 		allErrs = append(allErrs, field.Invalid(fieldPath, pod.Annotations[key], err.Error()))
 	}

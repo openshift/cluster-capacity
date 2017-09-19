@@ -22,9 +22,8 @@ import (
 	"k8s.io/apiserver/pkg/admission"
 )
 
-// Register registers a plugin
-func Register(plugins *admission.Plugins) {
-	plugins.Register("AlwaysAdmit", func(config io.Reader) (admission.Interface, error) {
+func init() {
+	admission.RegisterPlugin("AlwaysAdmit", func(config io.Reader) (admission.Interface, error) {
 		return NewAlwaysAdmit(), nil
 	})
 }

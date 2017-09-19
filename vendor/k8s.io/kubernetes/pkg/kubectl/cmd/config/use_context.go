@@ -50,7 +50,10 @@ func NewCmdConfigUseContext(out io.Writer, configAccess clientcmd.ConfigAccess) 
 		Long:    `Sets the current-context in a kubeconfig file`,
 		Example: use_context_example,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(options.complete(cmd))
+			if !options.complete(cmd) {
+				return
+			}
+
 			cmdutil.CheckErr(options.run())
 			fmt.Fprintf(out, "Switched to context %q.\n", options.contextName)
 		},
@@ -79,15 +82,15 @@ func (o useContextOptions) run() error {
 	return nil
 }
 
-func (o *useContextOptions) complete(cmd *cobra.Command) error {
+func (o *useContextOptions) complete(cmd *cobra.Command) bool {
 	endingArgs := cmd.Flags().Args()
 	if len(endingArgs) != 1 {
 		cmd.Help()
-		return fmt.Errorf("Unexpected args: %v", endingArgs)
+		return false
 	}
 
 	o.contextName = endingArgs[0]
-	return nil
+	return true
 }
 
 func (o useContextOptions) validate(config *clientcmdapi.Config) error {

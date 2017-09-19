@@ -18,23 +18,18 @@ package framework
 
 import (
 	"testing"
-	"time"
 )
 
-const (
-	DefaultWaitInterval = 50 * time.Millisecond
-)
-
-// SetUp is likely to be fixture-specific, but TearDown needs to be
-// consistent to enable TearDownOnPanic.
+// Setup is likely to be fixture-specific, but Teardown needs to be
+// consistent to enable TeardownOnPanic.
 type TestFixture interface {
-	TearDown(t *testing.T)
+	Teardown(t *testing.T)
 }
 
-// TearDownOnPanic can be used to ensure cleanup on setup failure.
-func TearDownOnPanic(t *testing.T, f TestFixture) {
+// TeardownOnPanic can be used to ensure cleanup on setup failure.
+func TeardownOnPanic(t *testing.T, f TestFixture) {
 	if r := recover(); r != nil {
-		f.TearDown(t)
+		f.Teardown(t)
 		panic(r)
 	}
 }

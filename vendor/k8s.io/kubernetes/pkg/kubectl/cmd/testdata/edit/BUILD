@@ -1,3 +1,5 @@
+package(default_visibility = ["//visibility:public"])
+
 licenses(["notice"])
 
 load(
@@ -16,20 +18,18 @@ go_library(
     name = "go_default_library",
     srcs = ["record.go"],
     tags = ["automanaged"],
-    deps = ["//vendor/gopkg.in/yaml.v2:go_default_library"],
+    deps = ["//vendor:gopkg.in/yaml.v2"],
 )
 
 filegroup(
     name = "package-srcs",
     srcs = glob(["**"]),
     tags = ["automanaged"],
+    visibility = ["//visibility:private"],
 )
 
 filegroup(
     name = "all-srcs",
     srcs = [":package-srcs"],
     tags = ["automanaged"],
-    visibility = [
-        "//build/visible_to:pkg_kubectl_cmd_testdata_edit_CONSUMERS",
-    ],
 )

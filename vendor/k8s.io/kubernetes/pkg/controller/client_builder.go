@@ -40,7 +40,7 @@ import (
 	"github.com/golang/glog"
 )
 
-// ControllerClientBuilder allows you to get clients and configs for controllers
+// ControllerClientBuilder allow syou to get clients and configs for controllers
 type ControllerClientBuilder interface {
 	Config(name string) (*restclient.Config, error)
 	ConfigOrDie(name string) *restclient.Config

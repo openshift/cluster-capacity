@@ -44,7 +44,6 @@ func NewCmdSet(f cmdutil.Factory, out, err io.Writer) *cobra.Command {
 	cmd.AddCommand(NewCmdImage(f, out, err))
 	cmd.AddCommand(NewCmdResources(f, out, err))
 	cmd.AddCommand(NewCmdSelector(f, out))
-	cmd.AddCommand(NewCmdSubject(f, out, err))
 
 	return cmd
 }

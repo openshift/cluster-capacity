@@ -21,7 +21,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/emicklei/go-restful-swagger12"
+	"github.com/emicklei/go-restful/swagger"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	apiutil "k8s.io/kubernetes/pkg/api/util"

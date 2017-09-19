@@ -22,8 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/emicklei/go-restful-swagger12"
-	"github.com/go-openapi/spec"
+	"github.com/emicklei/go-restful/swagger"
 	"github.com/stretchr/testify/assert"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -102,7 +101,6 @@ type fakeDiscoveryClient struct {
 	resourceCalls int
 	versionCalls  int
 	swaggerCalls  int
-	openAPICalls  int
 
 	serverResourcesHandler func() ([]*metav1.APIResourceList, error)
 }
@@ -169,9 +167,4 @@ func (c *fakeDiscoveryClient) ServerVersion() (*version.Info, error) {
 func (c *fakeDiscoveryClient) SwaggerSchema(version schema.GroupVersion) (*swagger.ApiDeclaration, error) {
 	c.swaggerCalls = c.swaggerCalls + 1
 	return &swagger.ApiDeclaration{}, nil
-}
-
-func (c *fakeDiscoveryClient) OpenAPISchema() (*spec.Swagger, error) {
-	c.openAPICalls = c.openAPICalls + 1
-	return &spec.Swagger{}, nil
 }

@@ -36,14 +36,14 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: valid-pod
   labels:
-    name: valid-pod
+    name: redis-proxy
+    role: proxy
+  name: redis-proxy
 spec:
   containers:
-  - name: kubernetes-serve-hostname
-    image: gcr.io/google_containers/serve_hostname
-    resources:
-      limits:
-        cpu: "1"
-        memory: 512Mi
+  - name: proxy
+    image: kubernetes/redis-proxy:v1
+    ports:
+    - containerPort: 6379
+      name: api

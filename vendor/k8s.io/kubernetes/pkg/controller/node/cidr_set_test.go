@@ -249,7 +249,7 @@ func TestOccupy(t *testing.T) {
 			subNetMaskSize:    16,
 			subNetCIDRStr:     "127.0.0.0/8",
 			expectedUsedBegin: 0,
-			expectedUsedEnd:   255,
+			expectedUsedEnd:   256,
 			expectErr:         false,
 		},
 		{
@@ -257,7 +257,7 @@ func TestOccupy(t *testing.T) {
 			subNetMaskSize:    16,
 			subNetCIDRStr:     "127.0.0.0/2",
 			expectedUsedBegin: 0,
-			expectedUsedEnd:   255,
+			expectedUsedEnd:   256,
 			expectErr:         false,
 		},
 		{

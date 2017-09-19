@@ -26,7 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/api/v1"
-	v1helper "k8s.io/kubernetes/pkg/api/v1/helper"
 	"k8s.io/kubernetes/pkg/kubelet/sysctl"
 
 	"k8s.io/kubernetes/test/e2e/framework"
@@ -124,7 +123,7 @@ func sysctlTestPod(name string, sysctls map[string]string) *v1.Pod {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Annotations: map[string]string{
-				v1.SysctlsPodAnnotationKey: v1helper.PodAnnotationsFromSysctls(sysctlList),
+				v1.SysctlsPodAnnotationKey: v1.PodAnnotationsFromSysctls(sysctlList),
 			},
 		},
 		Spec: v1.PodSpec{

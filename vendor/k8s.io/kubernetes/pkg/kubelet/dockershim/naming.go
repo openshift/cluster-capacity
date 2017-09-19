@@ -22,7 +22,8 @@ import (
 	"strconv"
 	"strings"
 
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
+	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
+	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/leaky"
 )
 
@@ -50,9 +51,9 @@ const (
 	// Delimiter used to construct docker container names.
 	nameDelimiter = "_"
 	// DockerImageIDPrefix is the prefix of image id in container status.
-	DockerImageIDPrefix = "docker://"
+	DockerImageIDPrefix = dockertools.DockerPrefix
 	// DockerPullableImageIDPrefix is the prefix of pullable image id in container status.
-	DockerPullableImageIDPrefix = "docker-pullable://"
+	DockerPullableImageIDPrefix = dockertools.DockerPullablePrefix
 )
 
 func makeSandboxName(s *runtimeapi.PodSandboxConfig) string {

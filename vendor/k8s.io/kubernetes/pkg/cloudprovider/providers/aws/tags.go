@@ -174,11 +174,7 @@ func (c *awsTagging) readRepairClusterTags(client EC2, resourceID string, lifecy
 		}
 	}
 
-	if len(addTags) == 0 {
-		return nil
-	}
-
-	if err := c.createTags(client, resourceID, lifecycle, addTags); err != nil {
+	if err := c.createTags(client, resourceID, lifecycle, additionalTags); err != nil {
 		return fmt.Errorf("error adding missing tags to resource %q: %v", resourceID, err)
 	}
 

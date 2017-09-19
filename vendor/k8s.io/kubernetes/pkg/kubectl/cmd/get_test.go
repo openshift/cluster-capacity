@@ -26,8 +26,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-openapi/spec"
-
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +42,6 @@ import (
 	"k8s.io/kubernetes/pkg/api/testapi"
 	apitesting "k8s.io/kubernetes/pkg/api/testing"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
-	"k8s.io/kubernetes/pkg/kubectl/cmd/util/openapi"
 )
 
 func testData() (*api.PodList, *api.ServiceList, *api.ReplicationControllerList) {
@@ -188,56 +185,6 @@ func TestGetSchemaObject(t *testing.T) {
 	}
 }
 
-func TestGetObjectsWithOpenAPIOutputFormatPresent(t *testing.T) {
-	pods, _, _ := testData()
-
-	f, tf, codec, _ := cmdtesting.NewAPIFactory()
-	tf.Printer = &testPrinter{}
-	// overide the openAPISchema function to return custom output
-	// for Pod type.
-	tf.OpenAPISchemaFunc = testOpenAPISchemaData
-	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
-		NegotiatedSerializer: unstructuredSerializer,
-		Resp:                 &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, &pods.Items[0])},
-	}
-	tf.Namespace = "test"
-	buf := bytes.NewBuffer([]byte{})
-	errBuf := bytes.NewBuffer([]byte{})
-
-	cmd := NewCmdGet(f, buf, errBuf)
-	cmd.SetOutput(buf)
-	cmd.Flags().Set(useOpenAPIPrintColumnFlagLabel, "true")
-	cmd.Run(cmd, []string{"pods", "foo"})
-
-	expected := []runtime.Object{&pods.Items[0]}
-	verifyObjects(t, expected, tf.Printer.(*testPrinter).Objects)
-
-	if len(buf.String()) == 0 {
-		t.Errorf("unexpected empty output")
-	}
-}
-
-func testOpenAPISchemaData() (*openapi.Resources, error) {
-	return &openapi.Resources{
-		GroupVersionKindToName: map[schema.GroupVersionKind]string{
-			{
-				Version: "v1",
-				Kind:    "Pod",
-			}: "io.k8s.kubernetes.pkg.api.v1.Pod",
-		},
-		NameToDefinition: map[string]openapi.Kind{
-			"io.k8s.kubernetes.pkg.api.v1.Pod": {
-				Name:       "io.k8s.kubernetes.pkg.api.v1.Pod",
-				IsResource: false,
-				Extensions: spec.Extensions{
-					"x-kubernetes-print-columns": "custom-columns=NAME:.metadata.name,RSRC:.metadata.resourceVersion",
-				},
-			},
-		},
-	}, nil
-}
-
 func TestGetObjects(t *testing.T) {
 	pods, _, _ := testData()
 
@@ -273,16 +220,15 @@ func TestGetObjectsFiltered(t *testing.T) {
 	second := &pods.Items[1]
 
 	testCases := []struct {
-		args           []string
-		resp           runtime.Object
-		flags          map[string]string
-		expect         []runtime.Object
-		genericPrinter bool
+		args   []string
+		resp   runtime.Object
+		flags  map[string]string
+		expect []runtime.Object
 	}{
-		{args: []string{"pods", "foo"}, resp: first, expect: []runtime.Object{first}, genericPrinter: true},
-		{args: []string{"pods", "foo"}, flags: map[string]string{"show-all": "false"}, resp: first, expect: []runtime.Object{first}, genericPrinter: true},
+		{args: []string{"pods", "foo"}, resp: first, expect: []runtime.Object{first}},
+		{args: []string{"pods", "foo"}, flags: map[string]string{"show-all": "false"}, resp: first, expect: []runtime.Object{first}},
 		{args: []string{"pods"}, flags: map[string]string{"show-all": "true"}, resp: pods, expect: []runtime.Object{first, second}},
-		{args: []string{"pods/foo"}, resp: first, expect: []runtime.Object{first}, genericPrinter: true},
+		{args: []string{"pods/foo"}, resp: first, expect: []runtime.Object{first}},
 		{args: []string{"pods"}, flags: map[string]string{"output": "yaml"}, resp: pods, expect: []runtime.Object{second}},
 		{args: []string{}, flags: map[string]string{"filename": "../../../examples/storage/cassandra/cassandra-controller.yaml"}, resp: pods, expect: []runtime.Object{first, second}},
 
@@ -294,7 +240,7 @@ func TestGetObjectsFiltered(t *testing.T) {
 	for i, test := range testCases {
 		t.Logf("%d", i)
 		f, tf, codec, _ := cmdtesting.NewAPIFactory()
-		tf.Printer = &testPrinter{GenericPrinter: test.genericPrinter}
+		tf.Printer = &testPrinter{}
 		tf.UnstructuredClient = &fake.RESTClient{
 			APIRegistry:          api.Registry,
 			NegotiatedSerializer: unstructuredSerializer,
@@ -335,7 +281,7 @@ func TestGetObjectIgnoreNotFound(t *testing.T) {
 	}
 
 	f, tf, codec, _ := cmdtesting.NewAPIFactory()
-	tf.Printer = &testPrinter{GenericPrinter: true}
+	tf.Printer = &testPrinter{}
 	tf.UnstructuredClient = &fake.RESTClient{
 		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
@@ -447,7 +393,7 @@ func TestGetObjectsIdentifiedByFile(t *testing.T) {
 	pods, _, _ := testData()
 
 	f, tf, codec, _ := cmdtesting.NewAPIFactory()
-	tf.Printer = &testPrinter{GenericPrinter: true}
+	tf.Printer = &testPrinter{}
 	tf.UnstructuredClient = &fake.RESTClient{
 		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
@@ -615,7 +561,8 @@ func TestGetMultipleTypeObjectsAsList(t *testing.T) {
 	pods, svc, _ := testData()
 
 	f, tf, codec, _ := cmdtesting.NewAPIFactory()
-	tf.Printer = &testPrinter{GenericPrinter: true}
+	tf.CommandPrinter = &testPrinter{}
+	tf.GenericPrinter = true
 	tf.UnstructuredClient = &fake.RESTClient{
 		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
@@ -642,8 +589,8 @@ func TestGetMultipleTypeObjectsAsList(t *testing.T) {
 	cmd.Flags().Set("output", "json")
 	cmd.Run(cmd, []string{"pods,services"})
 
-	actual := tf.Printer.(*testPrinter).Objects
-	fn := func(obj runtime.Object) unstructured.Unstructured {
+	actual := tf.CommandPrinter.(*testPrinter).Objects
+	fn := func(obj runtime.Object) *unstructured.Unstructured {
 		data, err := runtime.Encode(api.Codecs.LegacyCodec(schema.GroupVersion{Version: "v1"}), obj)
 		if err != nil {
 			panic(err)
@@ -652,12 +599,12 @@ func TestGetMultipleTypeObjectsAsList(t *testing.T) {
 		if err := encjson.Unmarshal(data, &out.Object); err != nil {
 			panic(err)
 		}
-		return *out
+		return out
 	}
 
 	expected := &unstructured.UnstructuredList{
-		Object: map[string]interface{}{"kind": "List", "apiVersion": "v1", "metadata": map[string]interface{}{"selfLink": "", "resourceVersion": ""}},
-		Items: []unstructured.Unstructured{
+		Object: map[string]interface{}{"kind": "List", "apiVersion": "v1", "metadata": map[string]interface{}{}, "selfLink": "", "resourceVersion": ""},
+		Items: []*unstructured.Unstructured{
 			fn(&pods.Items[0]),
 			fn(&pods.Items[1]),
 			fn(&svc.Items[0]),
@@ -769,7 +716,7 @@ func TestGetByFormatForcesFlag(t *testing.T) {
 	pods, _, _ := testData()
 
 	f, tf, codec, _ := cmdtesting.NewAPIFactory()
-	tf.Printer = &testPrinter{GenericPrinter: true}
+	tf.Printer = &testPrinter{}
 	tf.UnstructuredClient = &fake.RESTClient{
 		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,

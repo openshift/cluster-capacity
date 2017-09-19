@@ -22,22 +22,37 @@ func TestDeviceAllocator(t *testing.T) {
 	tests := []struct {
 		name            string
 		existingDevices ExistingDevices
-		deviceMap       map[mountDevice]int
+		lastIndex       int
 		expectedOutput  mountDevice
 	}{
 		{
+			"empty device list",
+			ExistingDevices{},
+			0,
+			"bb",
+		},
+		{
 			"empty device list with wrap",
 			ExistingDevices{},
-			generateUnsortedDeviceList(),
-			"bd", // next to 'zz' is the first one, 'ba'
+			51,
+			"ba", // next to 'zz' is the first one, 'ba'
+		},
+		{
+			"device list",
+			ExistingDevices{"ba": "used", "bb": "used", "bc": "used"},
+			0,
+			"bd",
+		},
+		{
+			"device list with wrap",
+			ExistingDevices{"cy": "used", "cz": "used", "ba": "used"},
+			49,
+			"bb", // "cy", "cz" and "ba" are used
 		},
 	}
 
 	for _, test := range tests {
-		allocator := NewDeviceAllocator().(*deviceAllocator)
-		for k, v := range test.deviceMap {
-			allocator.possibleDevices[k] = v
-		}
+		allocator := NewDeviceAllocator(test.lastIndex).(*deviceAllocator)
 
 		got, err := allocator.GetNext(test.existingDevices)
 		if err != nil {
@@ -49,20 +64,8 @@ func TestDeviceAllocator(t *testing.T) {
 	}
 }
 
-func generateUnsortedDeviceList() map[mountDevice]int {
-	possibleDevices := make(map[mountDevice]int)
-	for _, firstChar := range []rune{'b', 'c'} {
-		for i := 'a'; i <= 'z'; i++ {
-			dev := mountDevice([]rune{firstChar, i})
-			possibleDevices[dev] = 3
-		}
-	}
-	possibleDevices["bd"] = 0
-	return possibleDevices
-}
-
 func TestDeviceAllocatorError(t *testing.T) {
-	allocator := NewDeviceAllocator().(*deviceAllocator)
+	allocator := NewDeviceAllocator(0).(*deviceAllocator)
 	existingDevices := ExistingDevices{}
 
 	// make all devices used

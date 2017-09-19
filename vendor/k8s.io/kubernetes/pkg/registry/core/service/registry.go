@@ -58,7 +58,7 @@ func (s *storage) ListServices(ctx genericapirequest.Context, options *metainter
 }
 
 func (s *storage) CreateService(ctx genericapirequest.Context, svc *api.Service) (*api.Service, error) {
-	obj, err := s.Create(ctx, svc, false)
+	obj, err := s.Create(ctx, svc)
 	if err != nil {
 		return nil, err
 	}

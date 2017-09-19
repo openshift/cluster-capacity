@@ -71,12 +71,12 @@ func (apiServerStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old 
 	// return validation.ValidateFlunderUpdate(obj.(*wardle.Flunder), old.(*wardle.Flunder))
 }
 
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, bool, error) {
+func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
 	apiserver, ok := obj.(*wardle.Flunder)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("given object is not a Flunder.")
+		return nil, nil, fmt.Errorf("given object is not a Flunder.")
 	}
-	return labels.Set(apiserver.ObjectMeta.Labels), FlunderToSelectableFields(apiserver), apiserver.Initializers != nil, nil
+	return labels.Set(apiserver.ObjectMeta.Labels), FlunderToSelectableFields(apiserver), nil
 }
 
 // MatchFlunder is the filter used by the generic etcd backend to watch events

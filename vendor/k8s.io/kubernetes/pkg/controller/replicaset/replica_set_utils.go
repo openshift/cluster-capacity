@@ -26,8 +26,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	unversionedextensions "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/typed/extensions/v1beta1"
 )
@@ -45,6 +45,14 @@ func updateReplicaSetStatus(c unversionedextensions.ReplicaSetInterface, rs *ext
 		reflect.DeepEqual(rs.Status.Conditions, newStatus.Conditions) {
 		return rs, nil
 	}
+
+	// deep copy to avoid mutation now.
+	// TODO this method need some work.  Retry on conflict probably, though I suspect this is stomping status to something it probably shouldn't
+	copyObj, err := api.Scheme.DeepCopy(rs)
+	if err != nil {
+		return nil, err
+	}
+	rs = copyObj.(*extensions.ReplicaSet)
 
 	// Save the generation number we acted on, otherwise we might wrongfully indicate
 	// that we've seen a spec update when we retry.
@@ -97,9 +105,9 @@ func calculateStatus(rs *extensions.ReplicaSet, filteredPods []*v1.Pod, manageRe
 		if templateLabel.Matches(labels.Set(pod.Labels)) {
 			fullyLabeledReplicasCount++
 		}
-		if podutil.IsPodReady(pod) {
+		if v1.IsPodReady(pod) {
 			readyReplicasCount++
-			if podutil.IsPodAvailable(pod, rs.Spec.MinReadySeconds, metav1.Now()) {
+			if v1.IsPodAvailable(pod, rs.Spec.MinReadySeconds, metav1.Now()) {
 				availableReplicasCount++
 			}
 		}

@@ -47,7 +47,6 @@ import (
 const (
 	allClustersKey = "ALL_CLUSTERS"
 	ControllerName = "namespaces"
-	UserAgentName  = "federation-namespace-controller"
 )
 
 var (
@@ -97,7 +96,7 @@ type NamespaceController struct {
 func NewNamespaceController(client federationclientset.Interface, dynamicClientPool dynamic.ClientPool) *NamespaceController {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(eventsink.NewFederatedEventSink(client))
-	recorder := broadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: UserAgentName})
+	recorder := broadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "federated-namespace-controller"})
 
 	nc := &NamespaceController{
 		federatedApiClient:    client,
@@ -157,7 +156,7 @@ func NewNamespaceController(client federationclientset.Interface, dynamicClientP
 	)
 
 	// Federated updater along with Create/Update/Delete operations.
-	nc.federatedUpdater = util.NewFederatedUpdater(nc.namespaceFederatedInformer, "namespace", nc.updateTimeout, nc.eventRecorder,
+	nc.federatedUpdater = util.NewFederatedUpdater(nc.namespaceFederatedInformer,
 		func(client kubeclientset.Interface, obj runtime.Object) error {
 			namespace := obj.(*apiv1.Namespace)
 			_, err := client.Core().Namespaces().Create(namespace)
@@ -170,8 +169,7 @@ func NewNamespaceController(client federationclientset.Interface, dynamicClientP
 		},
 		func(client kubeclientset.Interface, obj runtime.Object) error {
 			namespace := obj.(*apiv1.Namespace)
-			orphanDependents := false
-			err := client.Core().Namespaces().Delete(namespace.Name, &metav1.DeleteOptions{OrphanDependents: &orphanDependents})
+			err := client.Core().Namespaces().Delete(namespace.Name, &metav1.DeleteOptions{})
 			// IsNotFound error is fine since that means the object is deleted already.
 			if errors.IsNotFound(err) {
 				return nil
@@ -180,12 +178,16 @@ func NewNamespaceController(client federationclientset.Interface, dynamicClientP
 		})
 
 	nc.deletionHelper = deletionhelper.NewDeletionHelper(
-		nc.updateNamespace,
+		nc.hasFinalizerFunc,
+		nc.removeFinalizerFunc,
+		nc.addFinalizerFunc,
 		// objNameFunc
 		func(obj runtime.Object) string {
 			namespace := obj.(*apiv1.Namespace)
-			return fmt.Sprintf("%s/%s", namespace.Namespace, namespace.Name)
+			return namespace.Name
 		},
+		nc.updateTimeout,
+		nc.eventRecorder,
 		nc.namespaceFederatedInformer,
 		nc.federatedUpdater,
 	)
@@ -197,11 +199,52 @@ func NewNamespaceController(client federationclientset.Interface, dynamicClientP
 	return nc
 }
 
-// Sends the given update object to apiserver.
-// Assumes that the given object is a namespace.
-func (nc *NamespaceController) updateNamespace(obj runtime.Object) (runtime.Object, error) {
+// Returns true if the given object has the given finalizer in its ObjectMeta.
+func (nc *NamespaceController) hasFinalizerFunc(obj runtime.Object, finalizer string) bool {
 	namespace := obj.(*apiv1.Namespace)
-	return nc.federatedApiClient.Core().Namespaces().Update(namespace)
+	for i := range namespace.ObjectMeta.Finalizers {
+		if string(namespace.ObjectMeta.Finalizers[i]) == finalizer {
+			return true
+		}
+	}
+	return false
+}
+
+// Removes the finalizer from the given objects ObjectMeta.
+// Assumes that the given object is a namespace.
+func (nc *NamespaceController) removeFinalizerFunc(obj runtime.Object, finalizer string) (runtime.Object, error) {
+	namespace := obj.(*apiv1.Namespace)
+	newFinalizers := []string{}
+	hasFinalizer := false
+	for i := range namespace.ObjectMeta.Finalizers {
+		if string(namespace.ObjectMeta.Finalizers[i]) != finalizer {
+			newFinalizers = append(newFinalizers, namespace.ObjectMeta.Finalizers[i])
+		} else {
+			hasFinalizer = true
+		}
+	}
+	if !hasFinalizer {
+		// Nothing to do.
+		return obj, nil
+	}
+	namespace.ObjectMeta.Finalizers = newFinalizers
+	namespace, err := nc.federatedApiClient.Core().Namespaces().Update(namespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove finalizer %s from namespace %s: %v", finalizer, namespace.Name, err)
+	}
+	return namespace, nil
+}
+
+// Adds the given finalizers to the given objects ObjectMeta.
+// Assumes that the given object is a namespace.
+func (nc *NamespaceController) addFinalizerFunc(obj runtime.Object, finalizers []string) (runtime.Object, error) {
+	namespace := obj.(*apiv1.Namespace)
+	namespace.ObjectMeta.Finalizers = append(namespace.ObjectMeta.Finalizers, finalizers...)
+	namespace, err := nc.federatedApiClient.Core().Namespaces().Finalize(namespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add finalizers %v to namespace %s: %v", finalizers, namespace.Name, err)
+	}
+	return namespace, nil
 }
 
 // Returns true if the given object has the given finalizer in its NamespaceSpec.
@@ -322,7 +365,7 @@ func (nc *NamespaceController) reconcileNamespace(namespace string) {
 	if baseNamespace.DeletionTimestamp != nil {
 		if err := nc.delete(baseNamespace); err != nil {
 			glog.Errorf("Failed to delete %s: %v", namespace, err)
-			nc.eventRecorder.Eventf(baseNamespace, api.EventTypeWarning, "DeleteFailed",
+			nc.eventRecorder.Eventf(baseNamespace, api.EventTypeNormal, "DeleteFailed",
 				"Namespace delete failed: %v", err)
 			nc.deliverNamespace(namespace, 0, true)
 		}
@@ -369,22 +412,26 @@ func (nc *NamespaceController) reconcileNamespace(namespace string) {
 		glog.V(5).Infof("Desired namespace in underlying clusters: %+v", desiredNamespace)
 
 		if !found {
+			nc.eventRecorder.Eventf(baseNamespace, api.EventTypeNormal, "CreateInCluster",
+				"Creating namespace in cluster %s", cluster.Name)
+
 			operations = append(operations, util.FederatedOperation{
 				Type:        util.OperationTypeAdd,
 				Obj:         desiredNamespace,
 				ClusterName: cluster.Name,
-				Key:         namespace,
 			})
 		} else {
 			clusterNamespace := clusterNamespaceObj.(*apiv1.Namespace)
 
 			// Update existing namespace, if needed.
 			if !util.ObjectMetaAndSpecEquivalent(desiredNamespace, clusterNamespace) {
+				nc.eventRecorder.Eventf(baseNamespace, api.EventTypeNormal, "UpdateInCluster",
+					"Updating namespace in cluster %s. Desired: %+v\n Actual: %+v\n", cluster.Name, desiredNamespace, clusterNamespace)
+
 				operations = append(operations, util.FederatedOperation{
 					Type:        util.OperationTypeUpdate,
 					Obj:         desiredNamespace,
 					ClusterName: cluster.Name,
-					Key:         namespace,
 				})
 			}
 		}
@@ -396,7 +443,10 @@ func (nc *NamespaceController) reconcileNamespace(namespace string) {
 	}
 	glog.V(2).Infof("Updating namespace %s in underlying clusters. Operations: %d", baseNamespace.Name, len(operations))
 
-	err = nc.federatedUpdater.Update(operations)
+	err = nc.federatedUpdater.UpdateWithOnError(operations, nc.updateTimeout, func(op util.FederatedOperation, operror error) {
+		nc.eventRecorder.Eventf(baseNamespace, api.EventTypeNormal, "UpdateInClusterFailed",
+			"Namespace update in cluster %s failed: %v", op.ClusterName, operror)
+	})
 	if err != nil {
 		glog.Errorf("Failed to execute updates for %s: %v", namespace, err)
 		nc.deliverNamespace(namespace, 0, true)

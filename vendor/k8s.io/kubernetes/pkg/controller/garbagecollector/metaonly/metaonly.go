@@ -52,14 +52,14 @@ func NewMetadataCodecFactory() serializer.CodecFactory {
 		if kind.Version == runtime.APIVersionInternal {
 			continue
 		}
-		if kind == metav1.Unversioned.WithKind("Status") {
+		if kind == api.Unversioned.WithKind("Status") {
 			// this is added below as unversioned
 			continue
 		}
 		metaOnlyObject := gvkToMetadataOnlyObject(kind)
 		scheme.AddKnownTypeWithName(kind, metaOnlyObject)
 	}
-	scheme.AddUnversionedTypes(metav1.Unversioned, &metav1.Status{})
+	scheme.AddUnversionedTypes(api.Unversioned, &metav1.Status{})
 	return serializer.NewCodecFactory(scheme)
 }
 

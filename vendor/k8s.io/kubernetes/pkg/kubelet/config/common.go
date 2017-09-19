@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/helper"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/api/validation"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
@@ -77,7 +76,7 @@ func applyDefaults(pod *api.Pod, source string, isFile bool, nodeName types.Node
 	if isFile {
 		// Applying the default Taint tolerations to static pods,
 		// so they are not evicted when there are node problems.
-		helper.AddOrUpdateTolerationInPod(pod, &api.Toleration{
+		api.AddOrUpdateTolerationInPod(pod, &api.Toleration{
 			Operator: "Exists",
 			Effect:   api.TaintEffectNoExecute,
 		})
@@ -93,7 +92,7 @@ func getSelfLink(name, namespace string) string {
 	if len(namespace) == 0 {
 		namespace = metav1.NamespaceDefault
 	}
-	selfLink = fmt.Sprintf("/api/"+api.Registry.GroupOrDie(api.GroupName).GroupVersion.Version+"/namespaces/%s/pods/%s", namespace, name)
+	selfLink = fmt.Sprintf("/api/"+api.Registry.GroupOrDie(api.GroupName).GroupVersion.Version+"/pods/namespaces/%s/%s", name, namespace)
 	return selfLink
 }
 

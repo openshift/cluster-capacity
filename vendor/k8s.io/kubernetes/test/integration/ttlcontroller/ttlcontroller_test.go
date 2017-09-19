@@ -1,3 +1,5 @@
+// +build integration,!no-etcd
+
 /*
 Copyright 2017 The Kubernetes Authors.
 
@@ -109,8 +111,8 @@ func waitForNodesWithTTLAnnotation(t *testing.T, nodeLister listers.NodeLister, 
 
 // Test whether ttlcontroller sets correct ttl annotations.
 func TestTTLAnnotations(t *testing.T) {
-	_, server, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, server := framework.RunAMaster(nil)
+	defer server.Close()
 
 	testClient, informers := createClientAndInformers(t, server)
 	nodeInformer := informers.Core().V1().Nodes()

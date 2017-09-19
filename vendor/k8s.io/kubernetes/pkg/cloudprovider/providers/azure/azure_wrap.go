@@ -43,7 +43,6 @@ func (az *Cloud) getVirtualMachine(nodeName types.NodeName) (vm compute.VirtualM
 	var realErr error
 
 	vmName := string(nodeName)
-	az.operationPollRateLimiter.Accept()
 	vm, err = az.VirtualMachinesClient.Get(az.ResourceGroup, vmName, "")
 
 	exists, realErr = checkResourceExistsFromError(err)
@@ -61,7 +60,6 @@ func (az *Cloud) getVirtualMachine(nodeName types.NodeName) (vm compute.VirtualM
 func (az *Cloud) getRouteTable() (routeTable network.RouteTable, exists bool, err error) {
 	var realErr error
 
-	az.operationPollRateLimiter.Accept()
 	routeTable, err = az.RouteTablesClient.Get(az.ResourceGroup, az.RouteTableName, "")
 
 	exists, realErr = checkResourceExistsFromError(err)
@@ -79,7 +77,6 @@ func (az *Cloud) getRouteTable() (routeTable network.RouteTable, exists bool, er
 func (az *Cloud) getSecurityGroup() (sg network.SecurityGroup, exists bool, err error) {
 	var realErr error
 
-	az.operationPollRateLimiter.Accept()
 	sg, err = az.SecurityGroupsClient.Get(az.ResourceGroup, az.SecurityGroupName, "")
 
 	exists, realErr = checkResourceExistsFromError(err)
@@ -97,7 +94,6 @@ func (az *Cloud) getSecurityGroup() (sg network.SecurityGroup, exists bool, err 
 func (az *Cloud) getAzureLoadBalancer(name string) (lb network.LoadBalancer, exists bool, err error) {
 	var realErr error
 
-	az.operationPollRateLimiter.Accept()
 	lb, err = az.LoadBalancerClient.Get(az.ResourceGroup, name, "")
 
 	exists, realErr = checkResourceExistsFromError(err)
@@ -115,7 +111,6 @@ func (az *Cloud) getAzureLoadBalancer(name string) (lb network.LoadBalancer, exi
 func (az *Cloud) getPublicIPAddress(name string) (pip network.PublicIPAddress, exists bool, err error) {
 	var realErr error
 
-	az.operationPollRateLimiter.Accept()
 	pip, err = az.PublicIPAddressesClient.Get(az.ResourceGroup, name, "")
 
 	exists, realErr = checkResourceExistsFromError(err)
@@ -128,22 +123,4 @@ func (az *Cloud) getPublicIPAddress(name string) (pip network.PublicIPAddress, e
 	}
 
 	return pip, exists, err
-}
-
-func (az *Cloud) getSubnet(virtualNetworkName string, subnetName string) (subnet network.Subnet, exists bool, err error) {
-	var realErr error
-
-	az.operationPollRateLimiter.Accept()
-	subnet, err = az.SubnetsClient.Get(az.ResourceGroup, virtualNetworkName, subnetName, "")
-
-	exists, realErr = checkResourceExistsFromError(err)
-	if realErr != nil {
-		return subnet, false, realErr
-	}
-
-	if !exists {
-		return subnet, false, nil
-	}
-
-	return subnet, exists, err
 }

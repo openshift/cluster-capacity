@@ -10,11 +10,7 @@
 		"./examples"
 	],
 	"SkippedPaths": [
-		"^_.*",
-		"^staging.*",
-		"_vendor"
+		"^_.*"
 	],
-	"AddSourcesRules": true,
-	"VendorMultipleBuildFiles": true,
-	"K8sOpenAPIGen": true
+	"AddSourcesRules": true
 }

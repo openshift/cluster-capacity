@@ -86,21 +86,21 @@ func strategicPatchObject(
 	patchJS []byte,
 	objToUpdate runtime.Object,
 	versionedObj runtime.Object,
-) error {
-	originalObjMap := make(map[string]interface{})
+) (originalObjMap map[string]interface{}, patchMap map[string]interface{}, retErr error) {
+	originalObjMap = make(map[string]interface{})
 	if err := unstructured.DefaultConverter.ToUnstructured(originalObject, &originalObjMap); err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	patchMap := make(map[string]interface{})
+	patchMap = make(map[string]interface{})
 	if err := json.Unmarshal(patchJS, &patchMap); err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	if err := applyPatchToObject(codec, defaulter, originalObjMap, patchMap, objToUpdate, versionedObj); err != nil {
-		return err
+		return nil, nil, err
 	}
-	return nil
+	return
 }
 
 // applyPatchToObject applies a strategic merge patch of <patchMap> to

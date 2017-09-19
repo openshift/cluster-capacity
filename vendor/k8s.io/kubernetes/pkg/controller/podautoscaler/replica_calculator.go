@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/api/v1"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	autoscaling "k8s.io/kubernetes/pkg/apis/autoscaling/v2alpha1"
 	v1coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/typed/core/v1"
 	metricsclient "k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
@@ -56,12 +55,11 @@ func (c *ReplicaCalculator) GetResourceReplicas(currentReplicas int32, targetUti
 		return 0, 0, 0, time.Time{}, fmt.Errorf("unable to get pods while calculating replica count: %v", err)
 	}
 
-	itemsLen := len(podList.Items)
-	if itemsLen == 0 {
+	if len(podList.Items) == 0 {
 		return 0, 0, 0, time.Time{}, fmt.Errorf("no pods returned by selector while calculating replica count")
 	}
 
-	requests := make(map[string]int64, itemsLen)
+	requests := make(map[string]int64, len(podList.Items))
 	readyPodCount := 0
 	unreadyPods := sets.NewString()
 	missingPods := sets.NewString()
@@ -78,7 +76,7 @@ func (c *ReplicaCalculator) GetResourceReplicas(currentReplicas int32, targetUti
 
 		requests[pod.Name] = podSum
 
-		if pod.Status.Phase != v1.PodRunning || !podutil.IsPodReady(&pod) {
+		if pod.Status.Phase != v1.PodRunning || !v1.IsPodReady(&pod) {
 			// save this pod name for later, but pretend it doesn't exist for now
 			unreadyPods.Insert(pod.Name)
 			delete(metrics, pod.Name)
@@ -193,7 +191,7 @@ func (c *ReplicaCalculator) calcPlainMetricReplicas(metrics metricsclient.PodMet
 	missingPods := sets.NewString()
 
 	for _, pod := range podList.Items {
-		if pod.Status.Phase != v1.PodRunning || !podutil.IsPodReady(&pod) {
+		if pod.Status.Phase != v1.PodRunning || !v1.IsPodReady(&pod) {
 			// save this pod name for later, but pretend it doesn't exist for now
 			unreadyPods.Insert(pod.Name)
 			delete(metrics, pod.Name)
@@ -210,7 +208,7 @@ func (c *ReplicaCalculator) calcPlainMetricReplicas(metrics metricsclient.PodMet
 	}
 
 	if len(metrics) == 0 {
-		return 0, 0, fmt.Errorf("did not receive metrics for any ready pods")
+		return 0, 0, fmt.Errorf("did not recieve metrics for any ready pods")
 	}
 
 	usageRatio, utilization := metricsclient.GetMetricUtilizationRatio(metrics, targetUtilization)

@@ -95,7 +95,11 @@ func (hs *hawkularSource) GetUsagePercentile(kind api.ResourceName, perc int64, 
 		m = append(m, metrics.Tenant(namespace))
 	}
 
-	p := float64(perc)
+	p, err := metrics.ConvertToFloat64(perc)
+	if err != nil {
+		return 0, 0, err
+	}
+
 	m = append(m, metrics.Filters(metrics.TagsFilter(q), metrics.BucketsFilter(1), metrics.StartTimeFilter(start), metrics.EndTimeFilter(end), metrics.PercentilesFilter([]float64{p})))
 
 	bp, err := hs.client.ReadBuckets(metrics.Counter, m...)

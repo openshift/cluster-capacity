@@ -62,11 +62,11 @@ func (s *BuiltInAuthorizationOptions) AddFlags(fs *pflag.FlagSet) {
 
 	fs.DurationVar(&s.WebhookCacheAuthorizedTTL, "authorization-webhook-cache-authorized-ttl",
 		s.WebhookCacheAuthorizedTTL,
-		"The duration to cache 'authorized' responses from the webhook authorizer.")
+		"The duration to cache 'authorized' responses from the webhook authorizer. Default is 5m.")
 
 	fs.DurationVar(&s.WebhookCacheUnauthorizedTTL,
 		"authorization-webhook-cache-unauthorized-ttl", s.WebhookCacheUnauthorizedTTL,
-		"The duration to cache 'unauthorized' responses from the webhook authorizer.")
+		"The duration to cache 'unauthorized' responses from the webhook authorizer. Default is 30s.")
 
 	fs.String("authorization-rbac-super-user", "", ""+
 		"If specified, a username which avoids RBAC authorization checks and role binding "+
@@ -75,17 +75,14 @@ func (s *BuiltInAuthorizationOptions) AddFlags(fs *pflag.FlagSet) {
 
 }
 
-func (s *BuiltInAuthorizationOptions) Modes() []string {
+func (s *BuiltInAuthorizationOptions) ToAuthorizationConfig(informerFactory informers.SharedInformerFactory) authorizer.AuthorizationConfig {
 	modes := []string{}
 	if len(s.Mode) > 0 {
 		modes = strings.Split(s.Mode, ",")
 	}
-	return modes
-}
 
-func (s *BuiltInAuthorizationOptions) ToAuthorizationConfig(informerFactory informers.SharedInformerFactory) authorizer.AuthorizationConfig {
 	return authorizer.AuthorizationConfig{
-		AuthorizationModes:          s.Modes(),
+		AuthorizationModes:          modes,
 		PolicyFile:                  s.PolicyFile,
 		WebhookConfigFile:           s.WebhookConfigFile,
 		WebhookCacheAuthorizedTTL:   s.WebhookCacheAuthorizedTTL,

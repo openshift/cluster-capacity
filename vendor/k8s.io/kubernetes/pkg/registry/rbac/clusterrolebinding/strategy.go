@@ -104,12 +104,12 @@ func (s strategy) Export(ctx genericapirequest.Context, obj runtime.Object, exac
 }
 
 // GetAttrs returns labels and fields of a given object for filtering purposes.
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, bool, error) {
+func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
 	roleBinding, ok := obj.(*rbac.ClusterRoleBinding)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("not a ClusterRoleBinding")
+		return nil, nil, fmt.Errorf("not a ClusterRoleBinding")
 	}
-	return labels.Set(roleBinding.Labels), SelectableFields(roleBinding), roleBinding.Initializers != nil, nil
+	return labels.Set(roleBinding.Labels), SelectableFields(roleBinding), nil
 }
 
 // Matcher returns a generic matcher for a given label and field selector.

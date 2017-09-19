@@ -63,16 +63,16 @@ type RESTUpdateStrategy interface {
 // TODO: add other common fields that require global validation.
 func validateCommonFields(obj, old runtime.Object, strategy RESTUpdateStrategy) (field.ErrorList, error) {
 	allErrs := field.ErrorList{}
-	objectMeta, err := meta.Accessor(obj)
+	objectMeta, err := metav1.ObjectMetaFor(obj)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get new object metadata: %v", err)
 	}
-	oldObjectMeta, err := meta.Accessor(old)
+	oldObjectMeta, err := metav1.ObjectMetaFor(old)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get old object metadata: %v", err)
 	}
-	allErrs = append(allErrs, genericvalidation.ValidateObjectMetaAccessor(objectMeta, strategy.NamespaceScoped(), path.ValidatePathSegmentName, field.NewPath("metadata"))...)
-	allErrs = append(allErrs, genericvalidation.ValidateObjectMetaAccessorUpdate(objectMeta, oldObjectMeta, field.NewPath("metadata"))...)
+	allErrs = append(allErrs, genericvalidation.ValidateObjectMeta(objectMeta, strategy.NamespaceScoped(), path.ValidatePathSegmentName, field.NewPath("metadata"))...)
+	allErrs = append(allErrs, genericvalidation.ValidateObjectMetaUpdate(objectMeta, oldObjectMeta, field.NewPath("metadata"))...)
 
 	return allErrs, nil
 }
@@ -90,19 +90,19 @@ func BeforeUpdate(strategy RESTUpdateStrategy, ctx genericapirequest.Context, ob
 			return errors.NewBadRequest("the namespace of the provided object does not match the namespace sent on the request")
 		}
 	} else {
-		objectMeta.SetNamespace(metav1.NamespaceNone)
+		objectMeta.Namespace = metav1.NamespaceNone
 	}
 	// Ensure requests cannot update generation
-	oldMeta, err := meta.Accessor(old)
+	oldMeta, err := metav1.ObjectMetaFor(old)
 	if err != nil {
 		return err
 	}
-	objectMeta.SetGeneration(oldMeta.GetGeneration())
+	objectMeta.Generation = oldMeta.Generation
 
 	strategy.PrepareForUpdate(ctx, obj, old)
 
 	// ClusterName is ignored and should not be saved
-	objectMeta.SetClusterName("")
+	objectMeta.ClusterName = ""
 
 	// Ensure some common fields, like UID, are validated for all resources.
 	errs, err := validateCommonFields(obj, old, strategy)
@@ -112,7 +112,7 @@ func BeforeUpdate(strategy RESTUpdateStrategy, ctx genericapirequest.Context, ob
 
 	errs = append(errs, strategy.ValidateUpdate(ctx, obj, old)...)
 	if len(errs) > 0 {
-		return errors.NewInvalid(kind.GroupKind(), objectMeta.GetName(), errs)
+		return errors.NewInvalid(kind.GroupKind(), objectMeta.Name, errs)
 	}
 
 	strategy.Canonicalize(obj)

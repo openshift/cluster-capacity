@@ -60,6 +60,6 @@ type $.|public$ListerExpansion interface {}
 
 var namespacedExpansionInterfaceTemplate = `
 // $.|public$NamespaceListerExpansion allows custom methods to be added to
-// $.|public$NamespaceLister.
+// $.|public$NamespaeLister.
 type $.|public$NamespaceListerExpansion interface {}
 `

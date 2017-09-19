@@ -155,7 +155,3 @@ func (j *JSONPathPrinter) PrintObj(obj runtime.Object, w io.Writer) error {
 func (p *JSONPathPrinter) HandledResources() []string {
 	return []string{}
 }
-
-func (p *JSONPathPrinter) IsGeneric() bool {
-	return true
-}

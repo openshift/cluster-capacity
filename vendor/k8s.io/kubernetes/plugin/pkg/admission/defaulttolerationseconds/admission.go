@@ -22,10 +22,9 @@ import (
 	"io"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/helper"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
 )
 
 var (
@@ -38,9 +37,8 @@ var (
 			" that is added by default to every pod that does not already have such a toleration.")
 )
 
-// Register registers a plugin
-func Register(plugins *admission.Plugins) {
-	plugins.Register("DefaultTolerationSeconds", func(config io.Reader) (admission.Interface, error) {
+func init() {
+	admission.RegisterPlugin("DefaultTolerationSeconds", func(config io.Reader) (admission.Interface, error) {
 		return NewDefaultTolerationSeconds(), nil
 	})
 }
@@ -82,12 +80,12 @@ func (p *plugin) Admit(attributes admission.Attributes) (err error) {
 	toleratesNodeNotReady := false
 	toleratesNodeUnreachable := false
 	for _, toleration := range tolerations {
-		if (toleration.Key == algorithm.TaintNodeNotReady || len(toleration.Key) == 0) &&
+		if (toleration.Key == metav1.TaintNodeNotReady || len(toleration.Key) == 0) &&
 			(toleration.Effect == api.TaintEffectNoExecute || len(toleration.Effect) == 0) {
 			toleratesNodeNotReady = true
 		}
 
-		if (toleration.Key == algorithm.TaintNodeUnreachable || len(toleration.Key) == 0) &&
+		if (toleration.Key == metav1.TaintNodeUnreachable || len(toleration.Key) == 0) &&
 			(toleration.Effect == api.TaintEffectNoExecute || len(toleration.Effect) == 0) {
 			toleratesNodeUnreachable = true
 		}
@@ -99,21 +97,29 @@ func (p *plugin) Admit(attributes admission.Attributes) (err error) {
 	}
 
 	if !toleratesNodeNotReady {
-		helper.AddOrUpdateTolerationInPod(pod, &api.Toleration{
-			Key:               algorithm.TaintNodeNotReady,
+		_, err := api.AddOrUpdateTolerationInPod(pod, &api.Toleration{
+			Key:               metav1.TaintNodeNotReady,
 			Operator:          api.TolerationOpExists,
 			Effect:            api.TaintEffectNoExecute,
 			TolerationSeconds: defaultNotReadyTolerationSeconds,
 		})
+		if err != nil {
+			return admission.NewForbidden(attributes,
+				fmt.Errorf("failed to add default tolerations for taints `notReady:NoExecute` and `unreachable:NoExecute`, err: %v", err))
+		}
 	}
 
 	if !toleratesNodeUnreachable {
-		helper.AddOrUpdateTolerationInPod(pod, &api.Toleration{
-			Key:               algorithm.TaintNodeUnreachable,
+		_, err := api.AddOrUpdateTolerationInPod(pod, &api.Toleration{
+			Key:               metav1.TaintNodeUnreachable,
 			Operator:          api.TolerationOpExists,
 			Effect:            api.TaintEffectNoExecute,
 			TolerationSeconds: defaultUnreachableTolerationSeconds,
 		})
+		if err != nil {
+			return admission.NewForbidden(attributes,
+				fmt.Errorf("failed to add default tolerations for taints `notReady:NoExecute` and `unreachable:NoExecute`, err: %v", err))
+		}
 	}
 	return nil
 }

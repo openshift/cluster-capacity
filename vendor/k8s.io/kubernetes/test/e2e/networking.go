@@ -20,11 +20,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/master/ports"
-	"k8s.io/kubernetes/test/e2e/framework"
-
 	. "github.com/onsi/ginkgo"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/test/e2e/framework"
 )
 
 var _ = framework.KubeDescribe("Networking", func() {
@@ -46,9 +44,8 @@ var _ = framework.KubeDescribe("Networking", func() {
 	})
 
 	It("should provide Internet connection for containers [Conformance]", func() {
-		By("Running container which tries to ping 8.8.8.8")
-		framework.ExpectNoError(
-			framework.CheckConnectivityToHost(f, "", "ping-test", "8.8.8.8", 30))
+		By("Running container which tries to wget google.com")
+		framework.ExpectNoError(framework.CheckConnectivityToHost(f, "", "wget-test", "google.com", 30))
 	})
 
 	// First test because it has no dependencies on variables created later on.
@@ -59,13 +56,11 @@ var _ = framework.KubeDescribe("Networking", func() {
 			{path: "/healthz"},
 			{path: "/api"},
 			{path: "/apis"},
+			{path: "/logs"},
 			{path: "/metrics"},
 			{path: "/swaggerapi"},
 			{path: "/version"},
 			// TODO: test proxy links here
-		}
-		if !framework.ProviderIs("gke") {
-			tests = append(tests, struct{ path string }{path: "/logs"})
 		}
 		for _, test := range tests {
 			By(fmt.Sprintf("testing: %s", test.path))
@@ -84,8 +79,8 @@ var _ = framework.KubeDescribe("Networking", func() {
 		config := framework.NewNetworkingTestConfig(f)
 
 		By("checking kube-proxy URLs")
-		config.GetSelfURL(ports.ProxyHealthzPort, "/healthz", "200 OK")
-		config.GetSelfURL(ports.ProxyStatusPort, "/proxyMode", "iptables") // the default
+		config.GetSelfURL("/healthz", "ok")
+		config.GetSelfURL("/proxyMode", "iptables") // the default
 	})
 
 	// TODO: Remove [Slow] when this has had enough bake time to prove presubmit worthiness.

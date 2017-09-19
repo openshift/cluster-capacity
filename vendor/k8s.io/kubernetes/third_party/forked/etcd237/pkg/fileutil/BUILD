@@ -31,7 +31,7 @@ go_library(
         "sync_linux.go",
     ],
     tags = ["automanaged"],
-    deps = ["//vendor/github.com/coreos/pkg/capnslog:go_default_library"],
+    deps = ["//vendor:github.com/coreos/pkg/capnslog"],
 )
 
 filegroup(

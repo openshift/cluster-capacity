@@ -46,25 +46,18 @@ const (
 	unmountCmd = "unmount"
 
 	// Option keys
-	optionFSType         = "kubernetes.io/fsType"
-	optionReadWrite      = "kubernetes.io/readwrite"
-	optionKeySecret      = "kubernetes.io/secret"
-	optionFSGroup        = "kubernetes.io/fsGroup"
-	optionMountsDir      = "kubernetes.io/mountsDir"
-	optionPVorVolumeName = "kubernetes.io/pvOrVolumeName"
-
-	optionKeyPodName      = "kubernetes.io/pod.name"
-	optionKeyPodNamespace = "kubernetes.io/pod.namespace"
-	optionKeyPodUID       = "kubernetes.io/pod.uid"
-
-	optionKeyServiceAccountName = "kubernetes.io/serviceAccount.name"
-
-	attachCapability = "attach"
+	optionFSType    = "kubernetes.io/fsType"
+	optionReadWrite = "kubernetes.io/readwrite"
+	optionKeySecret = "kubernetes.io/secret"
+	optionFSGroup   = "kubernetes.io/fsGroup"
+	optionMountsDir = "kubernetes.io/mountsDir"
 )
 
 const (
 	// StatusSuccess represents the successful completion of command.
 	StatusSuccess = "Success"
+	// StatusFailed represents that the command failed.
+	StatusFailure = "Failed"
 	// StatusNotSupported represents that the command is not supported.
 	StatusNotSupported = "Not supported"
 )
@@ -175,8 +168,6 @@ func NewOptionsForDriver(spec *volume.Spec, host volume.VolumeHost, extraOptions
 		options[optionReadWrite] = "rw"
 	}
 
-	options[optionPVorVolumeName] = spec.Name()
-
 	for key, value := range extraOptions {
 		options[key] = value
 	}
@@ -201,10 +192,6 @@ type DriverStatus struct {
 	VolumeName string `json:"volumeName,omitempty"`
 	// Represents volume is attached on the node
 	Attached bool `json:"attached,omitempty"`
-	// Returns capabilities of the driver.
-	// By default we assume all the capabilities are supported.
-	// If the plugin does not support a capability, it can return false for that capability.
-	Capabilities map[string]bool
 }
 
 // isCmdNotSupportedErr checks if the error corresponds to command not supported by

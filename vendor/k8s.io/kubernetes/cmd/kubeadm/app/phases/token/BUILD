@@ -13,14 +13,7 @@ go_test(
     srcs = ["bootstrap_test.go"],
     library = ":go_default_library",
     tags = ["automanaged"],
-    deps = [
-        "//cmd/kubeadm/app/apis/kubeadm:go_default_library",
-        "//pkg/api:go_default_library",
-        "//vendor/k8s.io/apimachinery/pkg/api/errors:go_default_library",
-        "//vendor/k8s.io/apimachinery/pkg/runtime:go_default_library",
-        "//vendor/k8s.io/client-go/kubernetes/fake:go_default_library",
-        "//vendor/k8s.io/client-go/testing:go_default_library",
-    ],
+    deps = ["//cmd/kubeadm/app/apis/kubeadm:go_default_library"],
 )
 
 go_library(
@@ -28,14 +21,15 @@ go_library(
     srcs = ["bootstrap.go"],
     tags = ["automanaged"],
     deps = [
+        "//cmd/kubeadm/app/util/kubeconfig:go_default_library",
         "//cmd/kubeadm/app/util/token:go_default_library",
         "//pkg/bootstrap/api:go_default_library",
-        "//vendor/k8s.io/apimachinery/pkg/api/errors:go_default_library",
-        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
-        "//vendor/k8s.io/client-go/kubernetes:go_default_library",
-        "//vendor/k8s.io/client-go/pkg/api/v1:go_default_library",
-        "//vendor/k8s.io/client-go/tools/clientcmd:go_default_library",
-        "//vendor/k8s.io/client-go/tools/clientcmd/api:go_default_library",
+        "//vendor:k8s.io/apimachinery/pkg/api/errors",
+        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
+        "//vendor:k8s.io/client-go/kubernetes",
+        "//vendor:k8s.io/client-go/pkg/api/v1",
+        "//vendor:k8s.io/client-go/tools/clientcmd",
+        "//vendor:k8s.io/client-go/tools/clientcmd/api",
     ],
 )
 

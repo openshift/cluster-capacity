@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
+	api "k8s.io/kubernetes/pkg/api"
 	v1 "k8s.io/kubernetes/pkg/api/v1"
 )
 
@@ -88,7 +89,7 @@ func (s persistentVolumeClaimNamespaceLister) Get(name string) (*v1.PersistentVo
 		return nil, err
 	}
 	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("persistentvolumeclaim"), name)
+		return nil, errors.NewNotFound(api.Resource("persistentvolumeclaim"), name)
 	}
 	return obj.(*v1.PersistentVolumeClaim), nil
 }

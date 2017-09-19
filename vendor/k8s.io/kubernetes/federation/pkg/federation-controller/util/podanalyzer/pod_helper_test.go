@@ -49,7 +49,7 @@ func TestAnalyze(t *testing.T) {
 				{
 					Type:               api_v1.PodScheduled,
 					Status:             api_v1.ConditionFalse,
-					Reason:             api_v1.PodReasonUnschedulable,
+					Reason:             "Unschedulable",
 					LastTransitionTime: metav1.Time{Time: now.Add(-10 * time.Minute)},
 				},
 			},

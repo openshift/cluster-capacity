@@ -24,9 +24,8 @@ import (
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
 
-	internalapi "k8s.io/kubernetes/pkg/kubelet/apis/cri"
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
-	"k8s.io/kubernetes/pkg/kubelet/util"
+	internalapi "k8s.io/kubernetes/pkg/kubelet/api"
+	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
 )
 
 // RemoteImageService is a gRPC implementation of internalapi.ImageManagerService.
@@ -36,21 +35,16 @@ type RemoteImageService struct {
 }
 
 // NewRemoteImageService creates a new internalapi.ImageManagerService.
-func NewRemoteImageService(endpoint string, connectionTimeout time.Duration) (internalapi.ImageManagerService, error) {
-	glog.V(3).Infof("Connecting to image service %s", endpoint)
-	addr, dailer, err := util.GetAddressAndDialer(endpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithTimeout(connectionTimeout), grpc.WithDialer(dailer))
+func NewRemoteImageService(addr string, connectionTimout time.Duration) (internalapi.ImageManagerService, error) {
+	glog.V(3).Infof("Connecting to image service %s", addr)
+	conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithTimeout(connectionTimout), grpc.WithDialer(dial))
 	if err != nil {
 		glog.Errorf("Connect remote image service %s failed: %v", addr, err)
 		return nil, err
 	}
 
 	return &RemoteImageService{
-		timeout:     connectionTimeout,
+		timeout:     connectionTimout,
 		imageClient: runtimeapi.NewImageServiceClient(conn),
 	}, nil
 }
@@ -132,9 +126,4 @@ func (r *RemoteImageService) RemoveImage(image *runtimeapi.ImageSpec) error {
 	}
 
 	return nil
-}
-
-// ImageFsInfo returns information of the filesystem that is used to store images.
-func (r *RemoteImageService) ImageFsInfo(req *runtimeapi.ImageFsInfoRequest) (*runtimeapi.ImageFsInfoResponse, error) {
-	return nil, fmt.Errorf("not implemented")
 }

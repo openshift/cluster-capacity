@@ -27,7 +27,7 @@ import (
 func TestAdmission(t *testing.T) {
 	handler := NewSecurityContextDeny()
 
-	runAsUser := int64(1)
+	var runAsUser int64 = 1
 	priv := true
 
 	cases := []struct {
@@ -127,7 +127,7 @@ func TestPodSecurityContextAdmission(t *testing.T) {
 		},
 		{
 			securityContext: api.PodSecurityContext{
-				SupplementalGroups: []int64{int64(1234)},
+				SupplementalGroups: []int64{1234},
 			},
 			errorExpected: true,
 		},

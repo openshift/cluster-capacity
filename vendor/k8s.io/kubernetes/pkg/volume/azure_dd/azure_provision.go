@@ -26,7 +26,6 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 	utilstrings "k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
 )
 
 var _ volume.DeletableVolumePlugin = &azureDataDiskPlugin{}
@@ -107,10 +106,6 @@ type azureDiskProvisioner struct {
 var _ volume.Provisioner = &azureDiskProvisioner{}
 
 func (a *azureDiskProvisioner) Provision() (*v1.PersistentVolume, error) {
-	if !volume.AccessModesContainedInAll(a.plugin.GetAccessModes(), a.options.PVC.Spec.AccessModes) {
-		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", a.options.PVC.Spec.AccessModes, a.plugin.GetAccessModes())
-	}
-
 	var sku, location, account string
 
 	// maxLength = 79 - (4 for ".vhd") = 75
@@ -148,7 +143,7 @@ func (a *azureDiskProvisioner) Provision() (*v1.PersistentVolume, error) {
 			Name:   a.options.PVName,
 			Labels: map[string]string{},
 			Annotations: map[string]string{
-				volumehelper.VolumeDynamicallyCreatedByKey: "azure-disk-dynamic-provisioner",
+				"kubernetes.io/createdby": "azure-disk-dynamic-provisioner",
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{

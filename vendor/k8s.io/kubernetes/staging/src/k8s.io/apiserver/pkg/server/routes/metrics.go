@@ -31,8 +31,8 @@ import (
 type DefaultMetrics struct{}
 
 // Install adds the DefaultMetrics handler
-func (m DefaultMetrics) Install(c *mux.PathRecorderMux) {
-	c.Handle("/metrics", prometheus.Handler())
+func (m DefaultMetrics) Install(c *mux.APIContainer) {
+	c.NonSwaggerRoutes.Handle("/metrics", prometheus.Handler())
 }
 
 // MetricsWithReset install the prometheus metrics handler extended with support for the DELETE method
@@ -40,9 +40,9 @@ func (m DefaultMetrics) Install(c *mux.PathRecorderMux) {
 type MetricsWithReset struct{}
 
 // Install adds the MetricsWithReset handler
-func (m MetricsWithReset) Install(c *mux.PathRecorderMux) {
+func (m MetricsWithReset) Install(c *mux.APIContainer) {
 	defaultMetricsHandler := prometheus.Handler().ServeHTTP
-	c.HandleFunc("/metrics", func(w http.ResponseWriter, req *http.Request) {
+	c.NonSwaggerRoutes.HandleFunc("/metrics", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == "DELETE" {
 			apimetrics.Reset()
 			etcdmetrics.Reset()

@@ -1,3 +1,5 @@
+// +build integration,!no-etcd,linux
+
 /*
 Copyright 2015 The Kubernetes Authors.
 
@@ -21,7 +23,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,12 +87,8 @@ func checkForExpectedMetrics(t *testing.T, metrics []*prometheuspb.MetricFamily,
 }
 
 func TestMasterProcessMetrics(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		t.Skipf("not supported on GOOS=%s", runtime.GOOS)
-	}
-
-	_, s, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, s := framework.RunAMaster(nil)
+	defer s.Close()
 
 	metrics, err := scrapeMetrics(s)
 	if err != nil {
@@ -100,14 +97,15 @@ func TestMasterProcessMetrics(t *testing.T) {
 	checkForExpectedMetrics(t, metrics, []string{
 		"process_start_time_seconds",
 		"process_cpu_seconds_total",
+		"go_goroutines",
 		"process_open_fds",
 		"process_resident_memory_bytes",
 	})
 }
 
 func TestApiserverMetrics(t *testing.T) {
-	_, s, closeFn := framework.RunAMaster(nil)
-	defer closeFn()
+	_, s := framework.RunAMaster(nil)
+	defer s.Close()
 
 	// Make a request to the apiserver to ensure there's at least one data point
 	// for the metrics we're expecting -- otherwise, they won't be exported.

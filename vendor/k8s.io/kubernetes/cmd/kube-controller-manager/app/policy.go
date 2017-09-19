@@ -23,19 +23,10 @@ package app
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/kubernetes/pkg/controller/disruption"
-
-	"github.com/golang/glog"
 )
 
 func startDisruptionController(ctx ControllerContext) (bool, error) {
-	var group = "policy"
-	var version = "v1beta1"
-	var resource = "poddisruptionbudgets"
-
-	if !ctx.AvailableResources[schema.GroupVersionResource{Group: group, Version: version, Resource: resource}] {
-		glog.Infof(
-			"Refusing to start disruption because resource %q in group %q is not available.",
-			resource, group+"/"+version)
+	if !ctx.AvailableResources[schema.GroupVersionResource{Group: "policy", Version: "v1beta1", Resource: "poddisruptionbudgets"}] {
 		return false, nil
 	}
 	go disruption.NewDisruptionController(

@@ -22,35 +22,24 @@ import (
 	"k8s.io/apiserver/pkg/registry/generic"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
-	"k8s.io/apiserver/pkg/server/storage"
 	"k8s.io/kubernetes/federation/apis/federation"
-	_ "k8s.io/kubernetes/federation/apis/federation/install"
-	fedv1beta1 "k8s.io/kubernetes/federation/apis/federation/v1beta1"
-	clusteretcd "k8s.io/kubernetes/federation/registry/cluster/etcd"
 	"k8s.io/kubernetes/pkg/api"
+
+	_ "k8s.io/kubernetes/federation/apis/federation/install"
+	clusteretcd "k8s.io/kubernetes/federation/registry/cluster/etcd"
 )
 
-func installFederationAPIs(g *genericapiserver.GenericAPIServer, optsGetter generic.RESTOptionsGetter, apiResourceConfigSource storage.APIResourceConfigSource) {
-	groupName := federation.GroupName
-	clustersStorageFn := func() map[string]rest.Storage {
-		clusterStorage, clusterStatusStorage := clusteretcd.NewREST(optsGetter)
-		return map[string]rest.Storage{
-			"clusters":        clusterStorage,
-			"clusters/status": clusterStatusStorage,
-		}
+func installFederationAPIs(g *genericapiserver.GenericAPIServer, optsGetter generic.RESTOptionsGetter) {
+	clusterStorage, clusterStatusStorage := clusteretcd.NewREST(optsGetter)
+	federationResources := map[string]rest.Storage{
+		"clusters":        clusterStorage,
+		"clusters/status": clusterStatusStorage,
 	}
-	resourcesStorageMap := map[string]getResourcesStorageFunc{
-		"clusters": clustersStorageFn,
-	}
-	shouldInstallGroup, resources := enabledResources(fedv1beta1.SchemeGroupVersion, resourcesStorageMap, apiResourceConfigSource)
-	if !shouldInstallGroup {
-		return
-	}
-	federationGroupMeta := api.Registry.GroupOrDie(groupName)
+	federationGroupMeta := api.Registry.GroupOrDie(federation.GroupName)
 	apiGroupInfo := genericapiserver.APIGroupInfo{
 		GroupMeta: *federationGroupMeta,
 		VersionedResourcesStorageMap: map[string]map[string]rest.Storage{
-			"v1beta1": resources,
+			"v1beta1": federationResources,
 		},
 		OptionsExternalVersion: &api.Registry.GroupOrDie(api.GroupName).GroupVersion,
 		Scheme:                 api.Scheme,

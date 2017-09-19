@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -33,10 +32,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/kubernetes/pkg/api"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
-	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	"k8s.io/kubernetes/pkg/util/term"
 )
 
 type fakeRemoteAttach struct {
@@ -45,7 +43,7 @@ type fakeRemoteAttach struct {
 	err    error
 }
 
-func (f *fakeRemoteAttach) Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue remotecommand.TerminalSizeQueue) error {
+func (f *fakeRemoteAttach) Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue term.TerminalSizeQueue) error {
 	f.method = method
 	f.url = url
 	return f.err
@@ -59,21 +57,18 @@ func TestPodAndContainerAttach(t *testing.T) {
 		expectError       bool
 		expectedPod       string
 		expectedContainer string
-		timeout           time.Duration
 		obj               runtime.Object
 	}{
 		{
 			p:           &AttachOptions{},
 			expectError: true,
 			name:        "empty",
-			timeout:     1,
 		},
 		{
 			p:           &AttachOptions{},
 			args:        []string{"one", "two", "three"},
 			expectError: true,
 			name:        "too many args",
-			timeout:     2,
 		},
 		{
 			p:           &AttachOptions{},
@@ -81,7 +76,6 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedPod: "foo",
 			name:        "no container, no flags",
 			obj:         attachPod(),
-			timeout:     defaultPodLogsTimeout,
 		},
 		{
 			p:                 &AttachOptions{StreamOptions: StreamOptions{ContainerName: "bar"}},
@@ -90,7 +84,6 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedContainer: "bar",
 			name:              "container in flag",
 			obj:               attachPod(),
-			timeout:           10000000,
 		},
 		{
 			p:                 &AttachOptions{StreamOptions: StreamOptions{ContainerName: "initfoo"}},
@@ -99,7 +92,6 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedContainer: "initfoo",
 			name:              "init container in flag",
 			obj:               attachPod(),
-			timeout:           30,
 		},
 		{
 			p:           &AttachOptions{StreamOptions: StreamOptions{ContainerName: "bar"}},
@@ -107,7 +99,6 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectError: true,
 			name:        "non-existing container in flag",
 			obj:         attachPod(),
-			timeout:     10,
 		},
 		{
 			p:           &AttachOptions{},
@@ -115,7 +106,6 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedPod: "foo",
 			name:        "no container, no flags, pods and name",
 			obj:         attachPod(),
-			timeout:     10000,
 		},
 		{
 			p:           &AttachOptions{},
@@ -123,16 +113,6 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedPod: "foo",
 			name:        "no container, no flags, pod/name",
 			obj:         attachPod(),
-			timeout:     1,
-		},
-		{
-			p:           &AttachOptions{},
-			args:        []string{"pod/foo"},
-			expectedPod: "foo",
-			name:        "invalid get pod timeout value",
-			obj:         attachPod(),
-			expectError: true,
-			timeout:     0,
 		},
 	}
 
@@ -153,23 +133,21 @@ func TestPodAndContainerAttach(t *testing.T) {
 
 		cmd := &cobra.Command{}
 		options := test.p
-		cmdutil.AddPodRunningTimeoutFlag(cmd, test.timeout)
-
 		err := options.Complete(f, cmd, test.args)
 		if test.expectError && err == nil {
-			t.Errorf("%s: unexpected non-error", test.name)
+			t.Errorf("unexpected non-error (%s)", test.name)
 		}
 		if !test.expectError && err != nil {
-			t.Errorf("%s: unexpected error: %v", test.name, err)
+			t.Errorf("unexpected error: %v (%s)", err, test.name)
 		}
 		if err != nil {
 			continue
 		}
 		if options.PodName != test.expectedPod {
-			t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedPod, options.PodName)
+			t.Errorf("expected: %s, got: %s (%s)", test.expectedPod, options.PodName, test.name)
 		}
 		if options.ContainerName != test.expectedContainer {
-			t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedContainer, options.ContainerName)
+			t.Errorf("expected: %s, got: %s (%s)", test.expectedContainer, options.ContainerName, test.name)
 		}
 	}
 }
@@ -249,11 +227,9 @@ func TestAttach(t *testing.T) {
 				Out:           bufOut,
 				Err:           bufErr,
 			},
-			Attach:        remoteAttach,
-			GetPodTimeout: 1000,
+			Attach: remoteAttach,
 		}
 		cmd := &cobra.Command{}
-		cmdutil.AddPodRunningTimeoutFlag(cmd, 1000)
 		if err := params.Complete(f, cmd, []string{"foo"}); err != nil {
 			t.Fatal(err)
 		}
@@ -334,11 +310,9 @@ func TestAttachWarnings(t *testing.T) {
 				Stdin:         test.stdin,
 				TTY:           test.tty,
 			},
-			Attach:        ex,
-			GetPodTimeout: 1000,
+			Attach: ex,
 		}
 		cmd := &cobra.Command{}
-		cmdutil.AddPodRunningTimeoutFlag(cmd, 1000)
 		if err := params.Complete(f, cmd, []string{"foo"}); err != nil {
 			t.Fatal(err)
 		}

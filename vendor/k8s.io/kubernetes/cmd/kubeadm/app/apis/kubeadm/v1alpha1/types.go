@@ -25,12 +25,12 @@ import (
 type MasterConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 
-	API                API        `json:"api"`
-	Etcd               Etcd       `json:"etcd"`
-	Networking         Networking `json:"networking"`
-	KubernetesVersion  string     `json:"kubernetesVersion"`
-	CloudProvider      string     `json:"cloudProvider"`
-	AuthorizationModes []string   `json:"authorizationModes"`
+	API               API        `json:"api"`
+	Etcd              Etcd       `json:"etcd"`
+	Networking        Networking `json:"networking"`
+	KubernetesVersion string     `json:"kubernetesVersion"`
+	CloudProvider     string     `json:"cloudProvider"`
+	AuthorizationMode string     `json:"authorizationMode"`
 
 	Token    string        `json:"token"`
 	TokenTTL time.Duration `json:"tokenTTL"`
@@ -70,12 +70,10 @@ type Networking struct {
 }
 
 type Etcd struct {
-	Endpoints []string          `json:"endpoints"`
-	CAFile    string            `json:"caFile"`
-	CertFile  string            `json:"certFile"`
-	KeyFile   string            `json:"keyFile"`
-	DataDir   string            `json:"dataDir"`
-	ExtraArgs map[string]string `json:"extraArgs"`
+	Endpoints []string `json:"endpoints"`
+	CAFile    string   `json:"caFile"`
+	CertFile  string   `json:"certFile"`
+	KeyFile   string   `json:"keyFile"`
 }
 
 type NodeConfiguration struct {

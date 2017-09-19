@@ -33,14 +33,14 @@ var (
 		kubectl config delete-context minikube`)
 )
 
-func NewCmdConfigDeleteContext(out, errOut io.Writer, configAccess clientcmd.ConfigAccess) *cobra.Command {
+func NewCmdConfigDeleteContext(out io.Writer, configAccess clientcmd.ConfigAccess) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "delete-context NAME",
 		Short:   i18n.T("Delete the specified context from the kubeconfig"),
 		Long:    "Delete the specified context from the kubeconfig",
 		Example: delete_context_example,
 		Run: func(cmd *cobra.Command, args []string) {
-			err := runDeleteContext(out, errOut, configAccess, cmd)
+			err := runDeleteContext(out, configAccess, cmd)
 			cmdutil.CheckErr(err)
 		},
 	}
@@ -48,7 +48,7 @@ func NewCmdConfigDeleteContext(out, errOut io.Writer, configAccess clientcmd.Con
 	return cmd
 }
 
-func runDeleteContext(out, errOut io.Writer, configAccess clientcmd.ConfigAccess, cmd *cobra.Command) error {
+func runDeleteContext(out io.Writer, configAccess clientcmd.ConfigAccess, cmd *cobra.Command) error {
 	config, err := configAccess.GetStartingConfig()
 	if err != nil {
 		return err
@@ -69,10 +69,6 @@ func runDeleteContext(out, errOut io.Writer, configAccess clientcmd.ConfigAccess
 	_, ok := config.Contexts[name]
 	if !ok {
 		return fmt.Errorf("cannot delete context %s, not in %s", name, configFile)
-	}
-
-	if config.CurrentContext == name {
-		fmt.Fprint(errOut, "warning: this removed your active context, use \"kubectl config use-context\" to select a different one\n")
 	}
 
 	delete(config.Contexts, name)

@@ -23,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/kubelet/configmap"
 	podtest "k8s.io/kubernetes/pkg/kubelet/pod/testing"
 	"k8s.io/kubernetes/pkg/kubelet/secret"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
@@ -33,8 +32,7 @@ import (
 func newTestManager() (*basicManager, *podtest.FakeMirrorClient) {
 	fakeMirrorClient := podtest.NewFakeMirrorClient()
 	secretManager := secret.NewFakeManager()
-	configMapManager := configmap.NewFakeManager()
-	manager := NewBasicPodManager(fakeMirrorClient, secretManager, configMapManager).(*basicManager)
+	manager := NewBasicPodManager(fakeMirrorClient, secretManager).(*basicManager)
 	return manager, fakeMirrorClient
 }
 

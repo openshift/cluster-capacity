@@ -57,7 +57,7 @@ func (s *storage) ListCSRs(ctx genericapirequest.Context, options *metainternalv
 }
 
 func (s *storage) CreateCSR(ctx genericapirequest.Context, csr *certificates.CertificateSigningRequest) error {
-	_, err := s.Create(ctx, csr, false)
+	_, err := s.Create(ctx, csr)
 	return err
 }
 

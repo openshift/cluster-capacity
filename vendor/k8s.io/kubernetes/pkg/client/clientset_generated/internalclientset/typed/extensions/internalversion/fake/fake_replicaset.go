@@ -34,8 +34,6 @@ type FakeReplicaSets struct {
 
 var replicasetsResource = schema.GroupVersionResource{Group: "extensions", Version: "", Resource: "replicasets"}
 
-var replicasetsKind = schema.GroupVersionKind{Group: "extensions", Version: "", Kind: "ReplicaSet"}
-
 func (c *FakeReplicaSets) Create(replicaSet *extensions.ReplicaSet) (result *extensions.ReplicaSet, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewCreateAction(replicasetsResource, c.ns, replicaSet), &extensions.ReplicaSet{})
@@ -92,7 +90,7 @@ func (c *FakeReplicaSets) Get(name string, options v1.GetOptions) (result *exten
 
 func (c *FakeReplicaSets) List(opts v1.ListOptions) (result *extensions.ReplicaSetList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(replicasetsResource, replicasetsKind, c.ns, opts), &extensions.ReplicaSetList{})
+		Invokes(testing.NewListAction(replicasetsResource, c.ns, opts), &extensions.ReplicaSetList{})
 
 	if obj == nil {
 		return nil, err

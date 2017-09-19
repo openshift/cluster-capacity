@@ -19,7 +19,6 @@ package options
 import (
 	"github.com/spf13/pflag"
 
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apiserver/pkg/server"
 )
 
@@ -30,7 +29,7 @@ type FeatureOptions struct {
 }
 
 func NewFeatureOptions() *FeatureOptions {
-	defaults := server.NewConfig(serializer.CodecFactory{})
+	defaults := server.NewConfig()
 
 	return &FeatureOptions{
 		EnableProfiling:           defaults.EnableProfiling,

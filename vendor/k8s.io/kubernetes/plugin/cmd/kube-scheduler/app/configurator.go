@@ -26,7 +26,6 @@ import (
 	extensionsinformers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions/extensions/v1beta1"
 	"k8s.io/kubernetes/plugin/cmd/kube-scheduler/app/options"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 
@@ -72,12 +71,11 @@ func createClient(s *options.SchedulerServer) (*clientset.Clientset, error) {
 	return cli, nil
 }
 
-// CreateScheduler encapsulates the entire creation of a runnable scheduler.
-func CreateScheduler(
+// createScheduler encapsulates the entire creation of a runnable scheduler.
+func createScheduler(
 	s *options.SchedulerServer,
 	kubecli *clientset.Clientset,
 	nodeInformer coreinformers.NodeInformer,
-	podInformer coreinformers.PodInformer,
 	pvInformer coreinformers.PersistentVolumeInformer,
 	pvcInformer coreinformers.PersistentVolumeClaimInformer,
 	replicationControllerInformer coreinformers.ReplicationControllerInformer,
@@ -90,7 +88,6 @@ func CreateScheduler(
 		s.SchedulerName,
 		kubecli,
 		nodeInformer,
-		podInformer,
 		pvInformer,
 		pvcInformer,
 		replicationControllerInformer,
@@ -104,87 +101,38 @@ func CreateScheduler(
 	configurator = &schedulerConfigurator{
 		configurator,
 		s.PolicyConfigFile,
-		s.AlgorithmProvider,
-		s.PolicyConfigMapName,
-		s.PolicyConfigMapNamespace,
-		s.UseLegacyPolicyConfig,
-	}
+		s.AlgorithmProvider}
 
 	return scheduler.NewFromConfigurator(configurator, func(cfg *scheduler.Config) {
 		cfg.Recorder = recorder
 	})
 }
 
-// schedulerConfigurator is an interface wrapper that provides a way to create
-// a scheduler from a user provided config file or ConfigMap object.
+// schedulerConfigurator is an interface wrapper that provides default Configuration creation based on user
+// provided config file.
 type schedulerConfigurator struct {
 	scheduler.Configurator
-	policyFile               string
-	algorithmProvider        string
-	policyConfigMap          string
-	policyConfigMapNamespace string
-	useLegacyPolicyConfig    bool
+	policyFile        string
+	algorithmProvider string
 }
 
-// getSchedulerPolicyConfig finds and decodes scheduler's policy config. If no
-// such policy is found, it returns nil, nil.
-func (sc schedulerConfigurator) getSchedulerPolicyConfig() (*schedulerapi.Policy, error) {
-	var configData []byte
-	var policyConfigMapFound bool
-	var policy schedulerapi.Policy
-
-	// If not in legacy mode, try to find policy ConfigMap.
-	if !sc.useLegacyPolicyConfig && len(sc.policyConfigMap) != 0 {
-		namespace := sc.policyConfigMapNamespace
-		policyConfigMap, err := sc.GetClient().CoreV1().ConfigMaps(namespace).Get(sc.policyConfigMap, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("Error getting scheduler policy ConfigMap: %v.", err)
-		}
-		if policyConfigMap != nil {
-			var configString string
-			configString, policyConfigMapFound = policyConfigMap.Data[options.SchedulerPolicyConfigMapKey]
-			if !policyConfigMapFound {
-				return nil, fmt.Errorf("No element with key = '%v' is found in the ConfigMap 'Data'.", options.SchedulerPolicyConfigMapKey)
-			}
-			glog.V(5).Infof("Scheduler policy ConfigMap: %v", configString)
-			configData = []byte(configString)
-		}
-	}
-
-	// If we are in legacy mode or ConfigMap name is empty, try to use policy
-	// config file.
-	if !policyConfigMapFound {
-		if _, err := os.Stat(sc.policyFile); err != nil {
-			// No config file is found.
-			return nil, nil
-		}
-		var err error
-		configData, err = ioutil.ReadFile(sc.policyFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read policy config: %v", err)
-		}
-	}
-
-	if err := runtime.DecodeInto(latestschedulerapi.Codec, configData, &policy); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %v", err)
-	}
-	return &policy, nil
-}
-
-// Create implements the interface for the Configurator, hence it is exported
-// even though the struct is not.
+// Create implements the interface for the Configurator, hence it is exported even through the struct is not.
 func (sc schedulerConfigurator) Create() (*scheduler.Config, error) {
-	policy, err := sc.getSchedulerPolicyConfig()
-	if err != nil {
-		return nil, err
-	}
-	// If no policy is found, create scheduler from algorithm provider.
-	if policy == nil {
+	if _, err := os.Stat(sc.policyFile); err != nil {
 		if sc.Configurator != nil {
 			return sc.Configurator.CreateFromProvider(sc.algorithmProvider)
 		}
 		return nil, fmt.Errorf("Configurator was nil")
 	}
 
-	return sc.CreateFromConfig(*policy)
+	// policy file is valid, try to create a configuration from it.
+	var policy schedulerapi.Policy
+	configData, err := ioutil.ReadFile(sc.policyFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read policy config: %v", err)
+	}
+	if err := runtime.DecodeInto(latestschedulerapi.Codec, configData, &policy); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %v", err)
+	}
+	return sc.CreateFromConfig(policy)
 }

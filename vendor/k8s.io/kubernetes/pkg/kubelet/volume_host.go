@@ -24,7 +24,6 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/cloudprovider"
-	"k8s.io/kubernetes/pkg/kubelet/configmap"
 	"k8s.io/kubernetes/pkg/kubelet/secret"
 	"k8s.io/kubernetes/pkg/util/io"
 	"k8s.io/kubernetes/pkg/util/mount"
@@ -40,13 +39,11 @@ import (
 func NewInitializedVolumePluginMgr(
 	kubelet *Kubelet,
 	secretManager secret.Manager,
-	configMapManager configmap.Manager,
 	plugins []volume.VolumePlugin) (*volume.VolumePluginMgr, error) {
 	kvh := &kubeletVolumeHost{
-		kubelet:          kubelet,
-		volumePluginMgr:  volume.VolumePluginMgr{},
-		secretManager:    secretManager,
-		configMapManager: configMapManager,
+		kubelet:         kubelet,
+		volumePluginMgr: volume.VolumePluginMgr{},
+		secretManager:   secretManager,
 	}
 
 	if err := kvh.volumePluginMgr.InitPlugins(plugins, kvh); err != nil {
@@ -66,10 +63,9 @@ func (kvh *kubeletVolumeHost) GetPluginDir(pluginName string) string {
 }
 
 type kubeletVolumeHost struct {
-	kubelet          *Kubelet
-	volumePluginMgr  volume.VolumePluginMgr
-	secretManager    secret.Manager
-	configMapManager configmap.Manager
+	kubelet         *Kubelet
+	volumePluginMgr volume.VolumePluginMgr
+	secretManager   secret.Manager
 }
 
 func (kvh *kubeletVolumeHost) GetPodVolumeDir(podUID types.UID, pluginName string, volumeName string) string {
@@ -143,16 +139,4 @@ func (kvh *kubeletVolumeHost) GetNodeAllocatable() (v1.ResourceList, error) {
 
 func (kvh *kubeletVolumeHost) GetSecretFunc() func(namespace, name string) (*v1.Secret, error) {
 	return kvh.secretManager.GetSecret
-}
-
-func (kvh *kubeletVolumeHost) GetConfigMapFunc() func(namespace, name string) (*v1.ConfigMap, error) {
-	return kvh.configMapManager.GetConfigMap
-}
-
-func (kvh *kubeletVolumeHost) GetNodeLabels() (map[string]string, error) {
-	node, err := kvh.kubelet.GetNode()
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving node: %v", err)
-	}
-	return node.Labels, nil
 }

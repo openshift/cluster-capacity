@@ -34,7 +34,6 @@ import (
 	kstrings "k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
 )
 
 type sioVolume struct {
@@ -236,10 +235,6 @@ var _ volume.Provisioner = &sioVolume{}
 func (v *sioVolume) Provision() (*api.PersistentVolume, error) {
 	glog.V(4).Info(log("attempting to dynamically provision pvc %v", v.options.PVName))
 
-	if !volume.AccessModesContainedInAll(v.plugin.GetAccessModes(), v.options.PVC.Spec.AccessModes) {
-		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", v.options.PVC.Spec.AccessModes, v.plugin.GetAccessModes())
-	}
-
 	// setup volume attrributes
 	name := v.generateVolName()
 	capacity := v.options.PVC.Spec.Resources.Requests[api.ResourceName(api.ResourceStorage)]
@@ -279,7 +274,7 @@ func (v *sioVolume) Provision() (*api.PersistentVolume, error) {
 			Namespace: v.options.PVC.Namespace,
 			Labels:    map[string]string{},
 			Annotations: map[string]string{
-				volumehelper.VolumeDynamicallyCreatedByKey: "scaleio-dynamic-provisioner",
+				"kubernetes.io/createdby": "scaleio-dynamic-provisioner",
 			},
 		},
 		Spec: api.PersistentVolumeSpec{

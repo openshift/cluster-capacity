@@ -27,6 +27,7 @@ import (
 	"k8s.io/apiserver/pkg/registry/generic"
 	"k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/names"
+	kapi "k8s.io/client-go/pkg/api"
 
 	"k8s.io/kube-aggregator/pkg/apis/apiregistration"
 	"k8s.io/kube-aggregator/pkg/apis/apiregistration/validation"
@@ -37,17 +38,14 @@ type apiServerStrategy struct {
 	names.NameGenerator
 }
 
-func NewStrategy(typer runtime.ObjectTyper) apiServerStrategy {
-	return apiServerStrategy{typer, names.SimpleNameGenerator}
-}
+var Strategy = apiServerStrategy{kapi.Scheme, names.SimpleNameGenerator}
 
 func (apiServerStrategy) NamespaceScoped() bool {
 	return false
 }
 
 func (apiServerStrategy) PrepareForCreate(ctx genericapirequest.Context, obj runtime.Object) {
-	apiservice := obj.(*apiregistration.APIService)
-	apiservice.Status = apiregistration.APIServiceStatus{}
+	_ = obj.(*apiregistration.APIService)
 }
 
 func (apiServerStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runtime.Object) {
@@ -75,50 +73,12 @@ func (apiServerStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old 
 	return validation.ValidateAPIServiceUpdate(obj.(*apiregistration.APIService), old.(*apiregistration.APIService))
 }
 
-type apiServerStatusStrategy struct {
-	runtime.ObjectTyper
-	names.NameGenerator
-}
-
-func NewStatusStrategy(typer runtime.ObjectTyper) apiServerStatusStrategy {
-	return apiServerStatusStrategy{typer, names.SimpleNameGenerator}
-}
-
-func (apiServerStatusStrategy) NamespaceScoped() bool {
-	return false
-}
-
-func (apiServerStatusStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runtime.Object) {
-	newAPIService := obj.(*apiregistration.APIService)
-	oldAPIService := old.(*apiregistration.APIService)
-	newAPIService.Spec = oldAPIService.Spec
-	newAPIService.Labels = oldAPIService.Labels
-	newAPIService.Annotations = oldAPIService.Annotations
-	newAPIService.Finalizers = oldAPIService.Finalizers
-	newAPIService.OwnerReferences = oldAPIService.OwnerReferences
-}
-
-func (apiServerStatusStrategy) AllowCreateOnUpdate() bool {
-	return false
-}
-
-func (apiServerStatusStrategy) AllowUnconditionalUpdate() bool {
-	return false
-}
-
-func (apiServerStatusStrategy) Canonicalize(obj runtime.Object) {
-}
-
-func (apiServerStatusStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old runtime.Object) field.ErrorList {
-	return validation.ValidateAPIServiceStatusUpdate(obj.(*apiregistration.APIService), old.(*apiregistration.APIService))
-}
-
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, bool, error) {
+func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
 	apiserver, ok := obj.(*apiregistration.APIService)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("given object is not a APIService.")
+		return nil, nil, fmt.Errorf("given object is not a APIService.")
 	}
-	return labels.Set(apiserver.ObjectMeta.Labels), APIServiceToSelectableFields(apiserver), apiserver.Initializers != nil, nil
+	return labels.Set(apiserver.ObjectMeta.Labels), APIServiceToSelectableFields(apiserver), nil
 }
 
 // MatchAPIService is the filter used by the generic etcd backend to watch events

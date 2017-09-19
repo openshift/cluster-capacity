@@ -151,7 +151,6 @@ func (plugin *azureFilePlugin) ConstructVolumeSpec(volName, mountPath string) (*
 // azureFile volumes represent mount of an AzureFile share.
 type azureFile struct {
 	volName string
-	podUID  types.UID
 	pod     *v1.Pod
 	mounter mount.Interface
 	plugin  *azureFilePlugin
@@ -203,7 +202,7 @@ func (b *azureFileMounter) SetUpAt(dir string, fsGroup *int64) error {
 		return nil
 	}
 	var accountKey, accountName string
-	if accountName, accountKey, err = b.util.GetAzureCredentials(b.plugin.host, b.pod.Namespace, b.secretName); err != nil {
+	if accountName, accountKey, err = b.util.GetAzureCredentials(b.plugin.host, b.pod.Namespace, b.secretName, b.shareName); err != nil {
 		return err
 	}
 	os.MkdirAll(dir, 0750)

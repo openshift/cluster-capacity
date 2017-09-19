@@ -15,11 +15,15 @@ requires:
   kubernetes-master:
     interface: http
 resources:
-  kubectl:
+  e2e_amd64:
     type: file
-    filename: kubectl.snap
-    description: kubectl snap
-  kubernetes-test:
+    filename: e2e_amd64.tar.gz
+    description: Tarball of the e2e binary, and kubectl binary for amd64
+  e2e_ppc64el:
     type: file
-    filename: kubernetes-test.snap
-    description: kubernetes-test snap
+    filename: e2e_ppc64le.tar.gz
+    description: Tarball of the e2e binary, and kubectl binary for ppc64le
+  e2e_s390x:
+    type: file
+    filename: e2e_s390x.tar.gz
+    description: Tarball of the e2e binary, and kubectl binary for s390x

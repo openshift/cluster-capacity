@@ -48,7 +48,10 @@ func NewCmdConfigUnset(out io.Writer, configAccess clientcmd.ConfigAccess) *cobr
 		Short: i18n.T("Unsets an individual value in a kubeconfig file"),
 		Long:  unset_long,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(options.complete(cmd))
+			if !options.complete(cmd) {
+				return
+			}
+
 			cmdutil.CheckErr(options.run())
 			fmt.Fprintf(out, "Property %q unset.\n", options.propertyName)
 		},
@@ -84,15 +87,15 @@ func (o unsetOptions) run() error {
 	return nil
 }
 
-func (o *unsetOptions) complete(cmd *cobra.Command) error {
+func (o *unsetOptions) complete(cmd *cobra.Command) bool {
 	endingArgs := cmd.Flags().Args()
 	if len(endingArgs) != 1 {
 		cmd.Help()
-		return fmt.Errorf("Unexpected args: %v", endingArgs)
+		return false
 	}
 
 	o.propertyName = endingArgs[0]
-	return nil
+	return true
 }
 
 func (o unsetOptions) validate() error {

@@ -209,8 +209,7 @@ func (config AuthenticatorConfig) New() (authenticator.Request, *spec.SecurityDe
 	authenticator = group.NewAuthenticatedGroupAdder(authenticator)
 
 	if config.Anonymous {
-		// If the authenticator chain returns an error, return an error (don't consider a bad bearer token
-		// or invalid username/password combination anonymous).
+		// If the authenticator chain returns an error, return an error (don't consider a bad bearer token anonymous).
 		authenticator = union.NewFailOnError(authenticator, anonymous.NewAuthenticator())
 	}
 

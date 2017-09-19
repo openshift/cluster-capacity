@@ -2,7 +2,6 @@ repo: https://github.com/juju-solutions/layer-kubernetes-e2e
 includes:
   - layer:basic
   - layer:tls-client
-  - layer:snap
   - interface:http
 options:
   tls-client:
