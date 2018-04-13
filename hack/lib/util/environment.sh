@@ -104,7 +104,7 @@ readonly -f os::util::environment::setup_all_server_vars
 function os::util::environment::update_path_var() {
     local prefix
     if os::util::find::system_binary 'go' >/dev/null 2>&1; then
-        prefix+="${OS_OUTPUT_BINPATH}/$(os::util::host_platform):"
+        prefix+="${OS_OUTPUT_BINPATH}/$(os::build::host_platform):"
     fi
     if [[ -n "${GOPATH:-}" ]]; then
         prefix+="${GOPATH}/bin:"
@@ -137,7 +137,7 @@ function os::util::environment::setup_tmpdir_vars() {
     VOLUME_DIR="${BASETMPDIR}/volumes"
     export VOLUME_DIR
 
-    BASEOUTDIR="${OS_ROOT}/_output/scripts/${sub_dir}"
+    BASEOUTDIR="${OS_OUTPUT_SCRIPTPATH}/${sub_dir}"
     export BASEOUTDIR
     LOG_DIR="${LOG_DIR:-${BASEOUTDIR}/logs}"
     export LOG_DIR
@@ -284,7 +284,6 @@ function os::util::environment::setup_images_vars() {
             export USE_IMAGES
         fi
     fi
-	export OPENSHIFT_ROUTER_IMAGE="$( component=haproxy-router eval "echo ${USE_IMAGES}" )"
 	export MAX_IMAGES_BULK_IMPORTED_PER_REPOSITORY="${MAX_IMAGES_BULK_IMPORTED_PER_REPOSITORY:-3}"
 }
 readonly -f os::util::environment::setup_images_vars

@@ -10,72 +10,32 @@
 #
 # Globals:
 #  - ARTIFACT_DIR
+#  - SKIP_CLEANUP
 #  - SKIP_TEARDOWN
-#  - SKIP_IMAGE_CLEANUP
 # Arguments:
-#  1 - return code of the script
+#  None
 # Returns:
 #  None
 function os::cleanup::all() {
-	local return_code="$1"
+	if [[ -n "${SKIP_CLEANUP:-}" ]]; then
+		os::log::warning "[CLEANUP] Skipping cleanup routines..."
+		return 0
+	fi
 
 	# All of our cleanup is best-effort, so we do not care
 	# if any specific step fails.
 	set +o errexit
 
-	os::test::junit::generate_report
-
 	os::log::info "[CLEANUP] Beginning cleanup routines..."
-	os::cleanup::dump_events
-	os::cleanup::dump_etcd
 	os::cleanup::dump_container_logs
-	os::cleanup::dump_pprof_output
-	os::cleanup::find_cache_alterations
 	os::cleanup::truncate_large_logs
 
 	if [[ -z "${SKIP_TEARDOWN:-}" ]]; then
 		os::cleanup::containers
 		os::cleanup::processes
-		os::cleanup::prune_etcd
 	fi
-	os::util::describe_return_code "${return_code}"
 }
 readonly -f os::cleanup::all
-
-# os::cleanup::dump_etcd dumps the full contents of etcd to a file.
-#
-# Globals:
-#  - ARTIFACT_DIR
-#  - API_SCHEME
-#  - API_HOST
-#  - ETCD_PORT
-# Arguments:
-#  None
-# Returns:
-#  None
-function os::cleanup::dump_etcd() {
-	if [[ -n "${API_SCHEME:-}" && -n "${API_HOST:-}" && -n "${ETCD_PORT:-}" ]]; then
-		os::log::info "[CLEANUP] Dumping etcd contents to $( os::util::repository_relative_path "${ARTIFACT_DIR}/etcd_dump.json" )"
-		os::util::curl_etcd "/v2/keys/?recursive=true" > "${ARTIFACT_DIR}/etcd_dump.json"
-	fi
-}
-readonly -f os::cleanup::dump_etcd
-
-# os::cleanup::prune_etcd removes the etcd data store from disk.
-#
-# Globals:
-#  ARTIFACT_DIR
-# Arguments:
-#  None
-# Returns:
-#  None
-function os::cleanup::prune_etcd() {
-	if [[ -n "${ETCD_DATA_DIR:-}" ]]; then
-		os::log::info "[CLEANUP] Pruning etcd data directory"
-		${USE_SUDO:+sudo} rm -rf "${ETCD_DATA_DIR}"
-	fi
-}
-readonly -f os::cleanup::prune_etcd
 
 # os::cleanup::containers operates on our containers to stop the containers
 # and optionally remove the containers and any volumes they had attached.
@@ -105,7 +65,7 @@ function os::cleanup::containers() {
 	os::log::info "[CLEANUP] Removing docker containers"
 	for id in $( os::cleanup::internal::list_our_containers ); do
 		os::log::debug "Removing ${id}"
-		docker stop "${id}" >/dev/null
+		docker rm --volumes "${id}" >/dev/null
 	done
 }
 readonly -f os::cleanup::containers
@@ -136,35 +96,6 @@ function os::cleanup::dump_container_logs() {
 	done
 }
 readonly -f os::cleanup::dump_container_logs
-
-# os::cleanup::internal::list_our_containers returns a space-delimited list of
-# docker containers that belonged to some part of the Origin deployment.
-#
-# Globals:
-#  None
-# Arguments:
-#  None
-# Returns:
-#  None
-function os::cleanup::internal::list_our_containers() {
-	os::cleanup::internal::list_containers '^/origin$'
-	os::cleanup::internal::list_k8s_containers
-}
-readonly -f os::cleanup::internal::list_our_containers
-
-# os::cleanup::internal::list_k8s_containers returns a space-delimited list of
-# docker containers that belonged to k8s.
-#
-# Globals:
-#  None
-# Arguments:
-#  None
-# Returns:
-#  None
-function os::cleanup::internal::list_k8s_containers() {
-	os::cleanup::internal::list_containers '^/k8s_.*'
-}
-readonly -f os::cleanup::internal::list_k8s_containers
 
 # os::cleanup::internal::list_containers returns a space-delimited list of
 # docker containers that match a name regex.
@@ -216,57 +147,6 @@ function os::cleanup::tmpdir() {
 }
 readonly -f os::cleanup::tmpdir
 
-# os::cleanup::dump_events dumps all the events from a cluster to a file.
-#
-# Globals:
-#  ARTIFACT_DIR
-# Arguments:
-#  None
-# Returns:
-#  None
-function os::cleanup::dump_events() {
-	os::log::info "[CLEANUP] Dumping cluster events to $( os::util::repository_relative_path "${ARTIFACT_DIR}/events.txt" )"
-	local kubeconfig
-	if [[ -n "${ADMIN_KUBECONFIG:-}" ]]; then
-		kubeconfig="--config=${ADMIN_KUBECONFIG}"
-	fi
-	oc get events --all-namespaces ${kubeconfig:-} > "${ARTIFACT_DIR}/events.txt" 2>&1
-}
-readonly -f os::cleanup::dump_events
-
-# os::cleanup::find_cache_alterations ulls information out of the server
-# log so that we can get failure management in jenkins to highlight it
-# and really have it smack people in their logs. This is a severe
-# correctness problem.
-#
-# Globals:
-#  - LOG_DIR
-# Arguments:
-#  None
-# Returns:
-#  None
-function os::cleanup::find_cache_alterations() {
-	grep -ra5 "CACHE.*ALTERED" "${LOG_DIR}" || true
-}
-readonly -f os::cleanup::find_cache_alterations
-
-# os::cleanup::dump_pprof_output dumps profiling output for the
-# `openshift` binary
-#
-# Globals:
-#  - LOG_DIR
-# Arguments:
-#  None
-# Returns:
-#  None
-function os::cleanup::dump_pprof_output() {
-	if go tool -n pprof >/dev/null 2>&1 && [[ -s cpu.pprof ]]; then
-		os::log::info "[CLEANUP] \`pprof\` output logged to $( os::util::repository_relative_path "${LOG_DIR}/pprof.out" )"
-		go tool pprof -text "./_output/local/bin/$(os::util::host_platform)/openshift" cpu.pprof >"${LOG_DIR}/pprof.out" 2>&1
-	fi
-}
-readonly -f os::cleanup::dump_pprof_output
-
 # os::cleanup::truncate_large_logs truncates very large files under
 # $LOG_DIR and $ARTIFACT_DIR so we do not upload them to cloud storage
 # after CI runs.
@@ -279,7 +159,7 @@ readonly -f os::cleanup::dump_pprof_output
 # Returns:
 #  None
 function os::cleanup::truncate_large_logs() {
-	local max_file_size="100M"
+	local max_file_size="200M"
 	os::log::info "[CLEANUP] Truncating log files over ${max_file_size}"
 	for file in $(find "${ARTIFACT_DIR}" "${LOG_DIR}" -type f -name '*.log' \( -size +${max_file_size} \)); do
 		mv "${file}" "${file}.tmp"

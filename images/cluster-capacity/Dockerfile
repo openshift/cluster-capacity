@@ -3,9 +3,13 @@
 #
 # The standard name for this image is openshift/origin-cluster-capacity
 #
-FROM centos:centos7
+FROM openshift/origin-base
 
-COPY bin/hypercc /bin/hypercc
-RUN ln -sf /bin/hypercc /bin/cluster-capacity
-RUN ln -sf /bin/hypercc /bin/genpod
-CMD ["/bin/cluster-capacity --help"]
+RUN INSTALL_PKGS="openshift-cluster-capacity" && \
+    yum --enablerepo=origin-local-release install -y ${INSTALL_PKGS} && \
+    rpm -V ${INSTALL_PKGS} && \
+    yum clean all
+
+RUN ln -sf /usr/bin/hypercc /usr/bin/cluster-capacity
+RUN ln -sf /usr/bin/hypercc /usr/bin/genpod
+CMD ["/usr/bin/cluster-capacity --help"]

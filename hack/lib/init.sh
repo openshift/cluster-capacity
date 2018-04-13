@@ -35,12 +35,7 @@ OS_ROOT="$( os::util::absolute_path "${init_source}" )"
 export OS_ROOT
 cd "${OS_ROOT}"
 
-library_files=( $( find "${OS_ROOT}/hack/lib" -type f -name '*.sh' -not -path '*/hack/lib/init.sh' ) )
-# TODO(skuzmets): Move the contents of the following files into respective library files.
-library_files+=( "${OS_ROOT}/hack/common.sh" )
-library_files+=( "${OS_ROOT}/hack/util.sh" )
-
-for library_file in "${library_files[@]}"; do
+for library_file in $( find "${OS_ROOT}/hack/lib" -type f -name '*.sh' -not -path '*/hack/lib/init.sh' ); do
 	source "${library_file}"
 done
 
@@ -57,4 +52,9 @@ os::util::environment::update_path_var
 
 if [[ -z "${OS_TMP_ENV_SET-}" ]]; then
 	os::util::environment::setup_tmpdir_vars "$( basename "$0" ".sh" )"
+fi
+
+# Allow setting $JUNIT_REPORT to toggle output behavior
+if [[ -n "${JUNIT_REPORT:-}" ]]; then
+  export JUNIT_REPORT_OUTPUT="${LOG_DIR}/raw_test_output.log"
 fi
