@@ -2,5 +2,6 @@ language: go
 go:
 - 1.8
 script:
+- ./prep.sh
 - make build
 - make test
