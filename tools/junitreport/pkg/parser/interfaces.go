@@ -3,7 +3,7 @@ package parser
 import (
 	"bufio"
 
-	"github.com/openshift/origin/tools/junitreport/pkg/api"
+	"github.com/kubernetes-incubator/cluster-capacity/tools/junitreport/pkg/api"
 )
 
 // TestOutputParser knows how to parse test output to create a collection of test suites

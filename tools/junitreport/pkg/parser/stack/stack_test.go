@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openshift/origin/tools/junitreport/pkg/api"
+	"github.com/kubernetes-incubator/cluster-capacity/tools/junitreport/pkg/api"
 )
 
 func TestPush(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openshift/origin/tools/junitreport/pkg/cmd"
+	"github.com/kubernetes-incubator/cluster-capacity/tools/junitreport/pkg/cmd"
 )
 
 var (
