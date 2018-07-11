@@ -83,7 +83,14 @@ function os::build::setup_env() {
   # a version number, so we skip this check on Travis.  It's unnecessary
   # there anyway.
   if [[ "${TRAVIS:-}" != "true" ]]; then
-    os::golang::verify_go_version
+    local go_version
+    go_version=($(go version))
+    local expected_order=$(printf "%s\n%s\n" "${OS_REQUIRED_GO_VERSION}" "${go_version[2]}")
+    local actual_order=$(echo "${expected_order}" | sort --version-sort)
+    if [[ "${actual_order}" != "${expected_order}" ]]; then
+      os::log::fatal "Detected Go version: ${go_version[*]}.
+Builds require Go version ${OS_REQUIRED_GO_VERSION} or greater."
+    fi
   fi
   # For any tools that expect this to be set (it is default in golang 1.6),
   # force vendor experiment.
