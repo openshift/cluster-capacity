@@ -1,0 +1,4 @@
+---
+compose:
+  packages:
+    - openshift-enterprise-cluster-capacity
