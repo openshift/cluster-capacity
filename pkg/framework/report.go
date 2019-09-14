@@ -26,13 +26,13 @@ import (
 	"github.com/ghodss/yaml"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper"
 )
 
 type ClusterCapacityReview struct {
-	unversioned.TypeMeta
+	metav1.TypeMeta
 	Spec   ClusterCapacityReviewSpec
 	Status ClusterCapacityReviewStatus
 }
@@ -107,9 +107,10 @@ func getMainFailReason(message string) *ClusterCapacityReviewScheduleFailReason 
 func getResourceRequest(pod *v1.Pod) *Resources {
 	result := Resources{
 		PrimaryResources: v1.ResourceList{
-			v1.ResourceName(v1.ResourceCPU):       *resource.NewMilliQuantity(0, resource.DecimalSI),
-			v1.ResourceName(v1.ResourceMemory):    *resource.NewQuantity(0, resource.BinarySI),
-			v1.ResourceName(v1.ResourceNvidiaGPU): *resource.NewMilliQuantity(0, resource.DecimalSI),
+			v1.ResourceName(v1.ResourceCPU):    *resource.NewMilliQuantity(0, resource.DecimalSI),
+			v1.ResourceName(v1.ResourceMemory): *resource.NewQuantity(0, resource.BinarySI),
+			// TODO(jchaloup): GPU resource is opaque now, find a way how to count it back again
+			// v1.ResourceName(v1.ResourceNvidiaGPU): *resource.NewMilliQuantity(0, resource.DecimalSI),
 		},
 	}
 
@@ -122,9 +123,9 @@ func getResourceRequest(pod *v1.Pod) *Resources {
 			case v1.ResourceCPU:
 				rQuantity.Add(*(result.PrimaryResources.Cpu()))
 				result.PrimaryResources[v1.ResourceCPU] = rQuantity
-			case v1.ResourceNvidiaGPU:
-				rQuantity.Add(*(result.PrimaryResources.NvidiaGPU()))
-				result.PrimaryResources[v1.ResourceNvidiaGPU] = rQuantity
+			// case v1.ResourceNvidiaGPU:
+			// 	rQuantity.Add(*(result.PrimaryResources.NvidiaGPU()))
+			// 	result.PrimaryResources[v1.ResourceNvidiaGPU] = rQuantity
 			default:
 				if helper.IsScalarResourceName(rName) {
 					// Lazily allocate this map only if required.
@@ -234,9 +235,9 @@ func clusterCapacityReviewPrettyPrint(r *ClusterCapacityReview, verbose bool) {
 			fmt.Printf("%v pod requirements:\n", req.PodName)
 			fmt.Printf("\t- CPU: %v\n", req.Resources.PrimaryResources.Cpu().String())
 			fmt.Printf("\t- Memory: %v\n", req.Resources.PrimaryResources.Memory().String())
-			if !req.Resources.PrimaryResources.NvidiaGPU().IsZero() {
-				fmt.Printf("\t- NvidiaGPU: %v\n", req.Resources.PrimaryResources.NvidiaGPU().String())
-			}
+			// if !req.Resources.PrimaryResources.NvidiaGPU().IsZero() {
+			// 	fmt.Printf("\t- NvidiaGPU: %v\n", req.Resources.PrimaryResources.NvidiaGPU().String())
+			// }
 			if req.Resources.ScalarResources != nil {
 				fmt.Printf("\t- ScalarResources: %v\n", req.Resources.ScalarResources)
 			}

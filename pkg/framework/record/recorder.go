@@ -50,6 +50,11 @@ func (e *Recorder) PastEventf(object runtime.Object, timestamp metav1.Time, even
 
 }
 
+// AnnotatedEventf is just like eventf, but with annotations attached
+func (e *Recorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
+
+}
+
 // NewFakeRecorder creates new fake event recorder with event channel with
 // buffer of given size.
 func NewRecorder(bufferSize int) *Recorder {

@@ -27,9 +27,7 @@ func NodeExample(name string) v1.Node {
 	return v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test", ResourceVersion: "123"},
-		Spec: v1.NodeSpec{
-			ExternalID: "ext",
-		},
+		Spec:       v1.NodeSpec{},
 	}
 }
 

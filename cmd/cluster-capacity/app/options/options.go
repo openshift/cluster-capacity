@@ -32,18 +32,15 @@ import (
 	api "k8s.io/kubernetes/pkg/apis/core"
 	apiv1 "k8s.io/kubernetes/pkg/apis/core/v1"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
-	schedapp "k8s.io/kubernetes/plugin/cmd/kube-scheduler/app"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithmprovider"
 
-	"github.com/kubernetes-incubator/cluster-capacity/pkg/utils"
+	kubeschedulerappconfig "k8s.io/kubernetes/cmd/kube-scheduler/app/config"
 )
 
 type ClusterCapacityConfig struct {
 	//Schedulers       []*schedapp.SchedulerServer
-	Pod              *v1.Pod
-	KubeClient       clientset.Interface
-	Options          *ClusterCapacityOptions
-	DefaultScheduler *schedapp.SchedulerServer
+	Pod        *v1.Pod
+	KubeClient clientset.Interface
+	Options    *ClusterCapacityOptions
 }
 
 type ClusterCapacityOptions struct {
@@ -81,77 +78,7 @@ func (s *ClusterCapacityOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVarP(&s.OutputFormat, "output", "o", s.OutputFormat, "Output format. One of: json|yaml (Note: output is not versioned or guaranteed to be stable across releases).")
 }
 
-func (s *ClusterCapacityConfig) parseSchedulerConfig(path string) (*schedapp.SchedulerServer, error) {
-	soptions, err := schedapp.NewOptions()
-	if err != nil {
-		return nil, err
-	}
-
-	err = soptions.ReallyApplyDefaults()
-	if err != nil {
-		return nil, err
-	}
-
-	soptions.ConfigFile = path
-
-	err = soptions.Complete()
-	if err != nil {
-		return nil, err
-	}
-
-	ksConfig := soptions.GetConfig()
-	ksConfig.ClientConnection.KubeConfigFile = s.Options.Kubeconfig
-
-	if len(path) > 0 {
-		filename, _ := filepath.Abs(path)
-		config, err := os.Open(filename)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to open config file: %v", err)
-		}
-
-		decoder := yaml.NewYAMLOrJSONDecoder(config, 4096)
-		decoder.Decode(ksConfig)
-	}
-
-	// In a POD, master is passed as empty string.
-	var master string
-	_, present := os.LookupEnv("CC_INCLUSTER")
-	if !present {
-		master, err = utils.GetMasterFromKubeConfig(s.Options.Kubeconfig)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// TODO(avesh): need to check if this works correctly
-	algorithmprovider.ApplyFeatureGates()
-
-	var newScheduler *schedapp.SchedulerServer
-	newScheduler, err = schedapp.NewSchedulerServer(ksConfig, master)
-	if err != nil {
-		return nil, err
-	}
-
-	newScheduler.SchedulerName = "cluster-capacity"
-	return newScheduler, nil
-}
-
-// TODO (avesh): disable until support for multiple schedulers is implemented.
-/*func (s *ClusterCapacityConfig) ParseAdditionalSchedulerConfigs() error {
-	for _, config := range s.Options.SchedulerConfigFile {
-		if config == "default-scheduler.yaml" {
-			continue
-		}
-		newScheduler, err := s.parseSchedulerConfig(config)
-		if err != nil {
-			return err
-		}
-		s.Schedulers = append(s.Schedulers, newScheduler)
-	}
-	return nil
-}*/
-
-func (s *ClusterCapacityConfig) ParseAPISpec() error {
+func (s *ClusterCapacityConfig) ParseAPISpec(cc *kubeschedulerappconfig.CompletedConfig) error {
 	var spec io.Reader
 	var err error
 	if strings.HasPrefix(s.Options.PodSpecFile, "http://") || strings.HasPrefix(s.Options.PodSpecFile, "https://") {
@@ -185,7 +112,7 @@ func (s *ClusterCapacityConfig) ParseAPISpec() error {
 
 	// set pod's scheduler name to cluster-capacity
 	if versionedPod.Spec.SchedulerName == "" {
-		versionedPod.Spec.SchedulerName = s.DefaultScheduler.SchedulerName
+		versionedPod.Spec.SchedulerName = cc.ComponentConfig.SchedulerName
 	}
 
 	// hardcoded from kube api defaults and validation
@@ -218,15 +145,5 @@ func (s *ClusterCapacityConfig) ParseAPISpec() error {
 	}
 
 	s.Pod = versionedPod
-	return nil
-}
-
-func (s *ClusterCapacityConfig) SetDefaultScheduler() error {
-	var err error
-	s.DefaultScheduler, err = s.parseSchedulerConfig(s.Options.DefaultSchedulerConfigFile)
-	if err != nil {
-		return fmt.Errorf("Error in opening default scheduler config file: %v", err)
-	}
-
 	return nil
 }

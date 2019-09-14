@@ -25,11 +25,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apitesting "k8s.io/kubernetes/pkg/api/testing"
-	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	"k8s.io/kubernetes/pkg/version"
-	sapps "k8s.io/kubernetes/plugin/cmd/kube-scheduler/app"
+	"k8s.io/utils/pointer"
+
+	// _ "k8s.io/kubernetes/pkg/scheduler/apis/config/scheme"
 
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
+	kubescheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
+	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
 func getGeneralNode(nodeName string) *v1.Node {
@@ -84,16 +87,16 @@ func getGeneralNode(nodeName string) *v1.Node {
 				KubeProxyVersion:        version.Get().String(),
 			},
 			Capacity: v1.ResourceList{
-				v1.ResourceCPU:       *resource.NewMilliQuantity(1000, resource.DecimalSI),
-				v1.ResourceMemory:    *resource.NewQuantity(4E9, resource.BinarySI),
-				v1.ResourcePods:      *resource.NewQuantity(10, resource.DecimalSI),
-				v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+				v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(4E9, resource.BinarySI),
+				v1.ResourcePods:   *resource.NewQuantity(10, resource.DecimalSI),
+				// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 			},
 			Allocatable: v1.ResourceList{
-				v1.ResourceCPU:       *resource.NewMilliQuantity(0, resource.DecimalSI),
-				v1.ResourceMemory:    *resource.NewQuantity(0, resource.BinarySI),
-				v1.ResourcePods:      *resource.NewQuantity(0, resource.DecimalSI),
-				v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+				v1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+				v1.ResourcePods:   *resource.NewQuantity(0, resource.DecimalSI),
+				// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 			},
 			Addresses: []v1.NodeAddress{
 				{Type: v1.NodeExternalIP, Address: "127.0.0.1"},
@@ -111,47 +114,49 @@ func TestPrediction(t *testing.T) {
 	// create first node with 2 cpus and 4GB, with some resources already consumed
 	node1 := getGeneralNode("test-node-1")
 	node1.Status.Capacity = v1.ResourceList{
-		v1.ResourceCPU:       *resource.NewMilliQuantity(2000, resource.DecimalSI),
-		v1.ResourceMemory:    *resource.NewQuantity(4E9, resource.BinarySI),
-		v1.ResourcePods:      *resource.NewQuantity(10, resource.DecimalSI),
-		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+		v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(4E9, resource.BinarySI),
+		v1.ResourcePods:   *resource.NewQuantity(10, resource.DecimalSI),
+		// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
 	node1.Status.Allocatable = v1.ResourceList{
-		v1.ResourceCPU:       *resource.NewMilliQuantity(300, resource.DecimalSI),
-		v1.ResourceMemory:    *resource.NewQuantity(1E9, resource.BinarySI),
-		v1.ResourcePods:      *resource.NewQuantity(3, resource.DecimalSI),
-		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+		v1.ResourceCPU:    *resource.NewMilliQuantity(300, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(1E9, resource.BinarySI),
+		v1.ResourcePods:   *resource.NewQuantity(3, resource.DecimalSI),
+		// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
 
 	// create second node with 2 cpus and 1GB, with some resources already consumed
 	node2 := getGeneralNode("test-node-2")
 	node2.Status.Capacity = v1.ResourceList{
-		v1.ResourceCPU:       *resource.NewMilliQuantity(1000, resource.DecimalSI),
-		v1.ResourceMemory:    *resource.NewQuantity(4E9, resource.BinarySI),
-		v1.ResourcePods:      *resource.NewQuantity(10, resource.DecimalSI),
-		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+		v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(4E9, resource.BinarySI),
+		v1.ResourcePods:   *resource.NewQuantity(10, resource.DecimalSI),
+		// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
 	node2.Status.Allocatable = v1.ResourceList{
-		v1.ResourceCPU:       *resource.NewMilliQuantity(400, resource.DecimalSI),
-		v1.ResourceMemory:    *resource.NewQuantity(2E9, resource.BinarySI),
-		v1.ResourcePods:      *resource.NewQuantity(3, resource.DecimalSI),
-		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+		v1.ResourceCPU:    *resource.NewMilliQuantity(400, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(2E9, resource.BinarySI),
+		v1.ResourcePods:   *resource.NewQuantity(3, resource.DecimalSI),
+		// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
 
 	// create third node with 2 cpus and 4GB, with some resources already consumed
 	node3 := getGeneralNode("test-node-3")
 	node3.Status.Capacity = v1.ResourceList{
-		v1.ResourceCPU:       *resource.NewMilliQuantity(2000, resource.DecimalSI),
-		v1.ResourceMemory:    *resource.NewQuantity(4E9, resource.BinarySI),
-		v1.ResourcePods:      *resource.NewQuantity(10, resource.DecimalSI),
-		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+		v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(4E9, resource.BinarySI),
+		v1.ResourcePods:   *resource.NewQuantity(10, resource.DecimalSI),
+		// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
 	node3.Status.Allocatable = v1.ResourceList{
-		v1.ResourceCPU:       *resource.NewMilliQuantity(1200, resource.DecimalSI),
-		v1.ResourceMemory:    *resource.NewQuantity(1E9, resource.BinarySI),
-		v1.ResourcePods:      *resource.NewQuantity(3, resource.DecimalSI),
-		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
+		v1.ResourceCPU:    *resource.NewMilliQuantity(1200, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(1E9, resource.BinarySI),
+		v1.ResourcePods:   *resource.NewQuantity(3, resource.DecimalSI),
+		// v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
+
+	client := fakeclientset.NewSimpleClientset(node1, node2, node3)
 
 	simulatedPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "simulated-pod", Namespace: "test-node-3", ResourceVersion: "10"},
@@ -163,12 +168,10 @@ func TestPrediction(t *testing.T) {
 
 	limitResourceList[v1.ResourceCPU] = *resource.NewMilliQuantity(100, resource.DecimalSI)
 	limitResourceList[v1.ResourceMemory] = *resource.NewQuantity(5E6, resource.BinarySI)
-	limitResourceList[v1.ResourceNvidiaGPU] = *resource.NewQuantity(0, resource.DecimalSI)
+	// limitResourceList[v1.ResourceNvidiaGPU] = *resource.NewQuantity(0, resource.DecimalSI)
 	requestsResourceList[v1.ResourceCPU] = *resource.NewMilliQuantity(100, resource.DecimalSI)
 	requestsResourceList[v1.ResourceMemory] = *resource.NewQuantity(5E6, resource.BinarySI)
-	requestsResourceList[v1.ResourceNvidiaGPU] = *resource.NewQuantity(0, resource.DecimalSI)
-
-	client := fakeclientset.NewSimpleClientset(node1, node2, node3)
+	// requestsResourceList[v1.ResourceNvidiaGPU] = *resource.NewQuantity(0, resource.DecimalSI)
 
 	// set pod's resource consumption
 	simulatedPod.Spec.Containers = []v1.Container{
@@ -182,17 +185,32 @@ func TestPrediction(t *testing.T) {
 
 	// 2. create predictor
 	// - create simple configuration file for scheduler (use the default values or from systemd env file if reasonable)
-	soptions, _ := sapps.NewOptions()
-	ksConfig := new(componentconfig.KubeSchedulerConfiguration)
-	ksConfig, _ = soptions.ApplyDefaults(ksConfig)
-	schedServer, _ := sapps.NewSchedulerServer(ksConfig, "http://localhost:8080")
-	cc, err := New(schedServer,
+	opts, err := kubescheduleroptions.NewOptions()
+	if err != nil {
+		t.Fatalf("unable to create scheduler options: %v", err)
+	}
+
+	// inject scheduler config config
+	opts.ComponentConfig = kubeschedulerconfig.KubeSchedulerConfiguration{
+		SchedulerName: "default-scheduler",
+		AlgorithmSource: kubeschedulerconfig.SchedulerAlgorithmSource{
+			Provider: pointer.StringPtr("DefaultProvider"),
+		},
+		HardPodAffinitySymmetricWeight: 1,
+	}
+
+	kubeSchedulerConfig, err := InitKubeSchedulerConfiguration(opts)
+	if err != nil {
+		t.Fatalf("Failed to init kube scheduler configuration: %v ", err)
+	}
+
+	cc, err := New(kubeSchedulerConfig,
 		simulatedPod,
 		6,
 	)
 
 	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
+		t.Fatalf("Unexpected error: %v", err)
 	}
 
 	// 3. run predictor
