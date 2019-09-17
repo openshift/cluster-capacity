@@ -35,7 +35,6 @@ import (
 	schedapp "k8s.io/kubernetes/plugin/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithmprovider"
 
-	"github.com/kubernetes-incubator/cluster-capacity/pkg/framework/store"
 	"github.com/kubernetes-incubator/cluster-capacity/pkg/utils"
 )
 
@@ -45,7 +44,6 @@ type ClusterCapacityConfig struct {
 	KubeClient       clientset.Interface
 	Options          *ClusterCapacityOptions
 	DefaultScheduler *schedapp.SchedulerServer
-	ResourceStore    store.ResourceStore
 }
 
 type ClusterCapacityOptions struct {

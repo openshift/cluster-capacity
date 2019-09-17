@@ -29,7 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/version"
 	sapps "k8s.io/kubernetes/plugin/cmd/kube-scheduler/app"
 
-	"github.com/kubernetes-incubator/cluster-capacity/pkg/framework/store"
+	fakeclientset "k8s.io/client-go/kubernetes/fake"
 )
 
 func getGeneralNode(nodeName string) *v1.Node {
@@ -107,7 +107,6 @@ func getGeneralNode(nodeName string) *v1.Node {
 func TestPrediction(t *testing.T) {
 	// 1. create fake storage with initial data
 	// - create three nodes, each node with different resources (cpu, memory)
-	resourceStore := store.NewResourceStore()
 
 	// create first node with 2 cpus and 4GB, with some resources already consumed
 	node1 := getGeneralNode("test-node-1")
@@ -124,10 +123,6 @@ func TestPrediction(t *testing.T) {
 		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
 
-	if err := resourceStore.Add("nodes", metav1.Object(node1)); err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-
 	// create second node with 2 cpus and 1GB, with some resources already consumed
 	node2 := getGeneralNode("test-node-2")
 	node2.Status.Capacity = v1.ResourceList{
@@ -142,9 +137,7 @@ func TestPrediction(t *testing.T) {
 		v1.ResourcePods:      *resource.NewQuantity(3, resource.DecimalSI),
 		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
 	}
-	if err := resourceStore.Add("nodes", metav1.Object(node2)); err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
+
 	// create third node with 2 cpus and 4GB, with some resources already consumed
 	node3 := getGeneralNode("test-node-3")
 	node3.Status.Capacity = v1.ResourceList{
@@ -158,9 +151,6 @@ func TestPrediction(t *testing.T) {
 		v1.ResourceMemory:    *resource.NewQuantity(1E9, resource.BinarySI),
 		v1.ResourcePods:      *resource.NewQuantity(3, resource.DecimalSI),
 		v1.ResourceNvidiaGPU: *resource.NewQuantity(0, resource.DecimalSI),
-	}
-	if err := resourceStore.Add("nodes", metav1.Object(node3)); err != nil {
-		t.Errorf("Unexpected error: %v", err)
 	}
 
 	simulatedPod := &v1.Pod{
@@ -177,6 +167,8 @@ func TestPrediction(t *testing.T) {
 	requestsResourceList[v1.ResourceCPU] = *resource.NewMilliQuantity(100, resource.DecimalSI)
 	requestsResourceList[v1.ResourceMemory] = *resource.NewQuantity(5E6, resource.BinarySI)
 	requestsResourceList[v1.ResourceNvidiaGPU] = *resource.NewQuantity(0, resource.DecimalSI)
+
+	client := fakeclientset.NewSimpleClientset(node1, node2, node3)
 
 	// set pod's resource consumption
 	simulatedPod.Spec.Containers = []v1.Container{
@@ -204,7 +196,7 @@ func TestPrediction(t *testing.T) {
 	}
 
 	// 3. run predictor
-	if err := cc.SyncWithStore(resourceStore); err != nil {
+	if err := cc.SyncWithClient(client); err != nil {
 		t.Errorf("Unable to sync resources: %v", err)
 	}
 	if err := cc.Run(); err != nil {
