@@ -6,3 +6,4 @@ reviewers:
 - ingvagabund
 - aveshagarwal
 - hodovska
+component: "kube-scheduler"
