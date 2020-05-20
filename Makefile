@@ -71,6 +71,10 @@ verify-commits:
 	hack/verify-upstream-commits.sh
 .PHONY: verify-commits
 
+test: | test-unit
+.PHONY: test
+
+
 # Run unit tests.
 #
 # Args:
