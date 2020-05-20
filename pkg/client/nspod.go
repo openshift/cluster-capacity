@@ -26,10 +26,14 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
+var (
+	ResourceGPU v1.ResourceName = "nvdia.com/gpu"
+)
+
 // Retrieve a namespace pod constructed from the namespace limitations.
 // Limitations cover pod resource limits and node selector if available
 func RetrieveNamespacePod(client clientset.Interface, namespace string) (*v1.Pod, error) {
-	ns, err := client.Core().Namespaces().Get(namespace, metav1.GetOptions{})
+	ns, err := client.CoreV1().Namespaces().Get(namespace, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("Namespace %v not found: %v", namespace, err)
 	}
@@ -53,7 +57,7 @@ func RetrieveNamespacePod(client clientset.Interface, namespace string) (*v1.Pod
 	}
 
 	// Iterate through all limit ranges and pick the minimum of all related to pod constraints
-	limits, err := client.Core().LimitRanges(namespace).List(metav1.ListOptions{})
+	limits, err := client.CoreV1().LimitRanges(namespace).List(metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("Could not retrieve limit ranges for %v namespaces: %v", namespace, err)
 	}
@@ -63,7 +67,7 @@ func RetrieveNamespacePod(client clientset.Interface, namespace string) (*v1.Pod
 	// TODO(jchaloup): extend the list of considered resources with other types
 	resources[v1.ResourceMemory] = nil
 	resources[v1.ResourceCPU] = nil
-	resources[v1.ResourceNvidiaGPU] = nil
+	resources[ResourceGPU] = nil
 
 	for _, limit := range limits.Items {
 		for _, item := range limit.Spec.Limits {

@@ -19,78 +19,82 @@ package framework
 import (
 	"encoding/json"
 	"fmt"
-	//"strconv"
 	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
 	"k8s.io/api/core/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper"
 )
 
+const (
+	ResourceNvidiaGPU v1.ResourceName = "nvdia.com/gpu"
+)
+
 type ClusterCapacityReview struct {
-	unversioned.TypeMeta
-	Spec   ClusterCapacityReviewSpec
-	Status ClusterCapacityReviewStatus
+	metav1.TypeMeta
+	Spec   ClusterCapacityReviewSpec   `json:"spec"`
+	Status ClusterCapacityReviewStatus `json:"status"`
 }
 
 type ClusterCapacityReviewSpec struct {
 	// the pod desired for scheduling
-	Templates []v1.Pod
+	Templates []v1.Pod `json:"templates"`
 
 	// desired number of replicas that should be scheduled
 	// +optional
-	Replicas int32
+	Replicas int32 `json:"replicas"`
 
-	PodRequirements []*Requirements
+	PodRequirements []*Requirements `json:"podRequirements"`
 }
 
 type ClusterCapacityReviewStatus struct {
-	CreationTimestamp time.Time
+	CreationTimestamp time.Time `json:"creationTimestamp"`
 	// actual number of replicas that could schedule
-	Replicas int32
+	Replicas int32 `json:"replicas"`
 
-	FailReason *ClusterCapacityReviewScheduleFailReason
+	FailReason *ClusterCapacityReviewScheduleFailReason `json:"failReason"`
 
 	// per node information about the scheduling simulation
-	Pods []*ClusterCapacityReviewResult
+	Pods []*ClusterCapacityReviewResult `json:"pods"`
 }
 
 type ClusterCapacityReviewResult struct {
-	PodName string
+	PodName string `json:"podName"`
 	// numbers of replicas on nodes
-	ReplicasOnNodes []*ReplicasOnNode
+	ReplicasOnNodes []*ReplicasOnNode `json:"replicasOnNodes"`
 	// reason why no more pods could schedule (if any on this node)
-	FailSummary []FailReasonSummary
+	FailSummary []FailReasonSummary `json:"failSummary"`
 }
 
 type ReplicasOnNode struct {
-	NodeName string
-	Replicas int
+	NodeName string `json:"nodeName"`
+	Replicas int    `json:"replicas"`
 }
 
 type FailReasonSummary struct {
-	Reason string
-	Count  int
+	Reason string `json:"reason"`
+	Count  int    `json:"count"`
 }
 
 type Resources struct {
-	PrimaryResources v1.ResourceList
-	ScalarResources  map[v1.ResourceName]int64
+	PrimaryResources v1.ResourceList           `json:"primaryResources"`
+	ScalarResources  map[v1.ResourceName]int64 `json:"scalarResources"`
 }
 
 type Requirements struct {
-	PodName       string
-	Resources     *Resources
-	NodeSelectors map[string]string
+	PodName       string            `json:"podName"`
+	Resources     *Resources        `json:"resources"`
+	NodeSelectors map[string]string `json:"nodeSelectors"`
 }
 
 type ClusterCapacityReviewScheduleFailReason struct {
-	FailType    string
-	FailMessage string
+	FailType    string `json:"failType"`
+	FailMessage string `json:"failMessage"`
 }
 
 func getMainFailReason(message string) *ClusterCapacityReviewScheduleFailReason {
@@ -107,9 +111,9 @@ func getMainFailReason(message string) *ClusterCapacityReviewScheduleFailReason 
 func getResourceRequest(pod *v1.Pod) *Resources {
 	result := Resources{
 		PrimaryResources: v1.ResourceList{
-			v1.ResourceName(v1.ResourceCPU):       *resource.NewMilliQuantity(0, resource.DecimalSI),
-			v1.ResourceName(v1.ResourceMemory):    *resource.NewQuantity(0, resource.BinarySI),
-			v1.ResourceName(v1.ResourceNvidiaGPU): *resource.NewMilliQuantity(0, resource.DecimalSI),
+			v1.ResourceName(v1.ResourceCPU):    *resource.NewMilliQuantity(0, resource.DecimalSI),
+			v1.ResourceName(v1.ResourceMemory): *resource.NewQuantity(0, resource.BinarySI),
+			v1.ResourceName(ResourceNvidiaGPU): *resource.NewMilliQuantity(0, resource.DecimalSI),
 		},
 	}
 
@@ -122,9 +126,9 @@ func getResourceRequest(pod *v1.Pod) *Resources {
 			case v1.ResourceCPU:
 				rQuantity.Add(*(result.PrimaryResources.Cpu()))
 				result.PrimaryResources[v1.ResourceCPU] = rQuantity
-			case v1.ResourceNvidiaGPU:
-				rQuantity.Add(*(result.PrimaryResources.NvidiaGPU()))
-				result.PrimaryResources[v1.ResourceNvidiaGPU] = rQuantity
+				//case v1.ResourceNvidiaGPU:
+				//	rQuantity.Add(*(result.PrimaryResources.NvidiaGPU()))
+				//	result.PrimaryResources[v1.ResourceNvidiaGPU] = rQuantity
 			default:
 				if helper.IsScalarResourceName(rName) {
 					// Lazily allocate this map only if required.
@@ -234,9 +238,9 @@ func clusterCapacityReviewPrettyPrint(r *ClusterCapacityReview, verbose bool) {
 			fmt.Printf("%v pod requirements:\n", req.PodName)
 			fmt.Printf("\t- CPU: %v\n", req.Resources.PrimaryResources.Cpu().String())
 			fmt.Printf("\t- Memory: %v\n", req.Resources.PrimaryResources.Memory().String())
-			if !req.Resources.PrimaryResources.NvidiaGPU().IsZero() {
-				fmt.Printf("\t- NvidiaGPU: %v\n", req.Resources.PrimaryResources.NvidiaGPU().String())
-			}
+			//if !req.Resources.PrimaryResources.NvidiaGPU().IsZero() {
+			//	fmt.Printf("\t- NvidiaGPU: %v\n", req.Resources.PrimaryResources.NvidiaGPU().String())
+			//}
 			if req.Resources.ScalarResources != nil {
 				fmt.Printf("\t- ScalarResources: %v\n", req.Resources.ScalarResources)
 			}
