@@ -1,7 +1,7 @@
 # Cluster capacity analysis framework
-[![Build Status](https://travis-ci.org/kubernetes-incubator/cluster-capacity.svg?branch=master)](https://travis-ci.org/kubernetes-incubator/cluster-capacity)
+[![Build Status](https://travis-ci.org/kubernetes-sigs/cluster-capacity.svg?branch=master)](https://travis-ci.org/kubernetes-sigs/cluster-capacity)
 
-Implementation of [cluster capacity analysis](https://github.com/kubernetes-incubator/cluster-capacity/blob/master/doc/cluster-capacity.md).
+Implementation of [cluster capacity analysis](https://github.com/kubernetes-sigs/cluster-capacity/blob/master/doc/cluster-capacity.md).
 
 ## Intro
 
@@ -22,6 +22,9 @@ in terms of a number of instances of a pod with given requirements that can be s
 Build the framework:
 
 ```sh
+$ cd $GOPATH/src/sigs.k8s.io
+$ git clone https://github.com/kubernetes-sigs/cluster-capacity
+$ cd cluster-capacity
 $ make build
 ```
 
@@ -111,7 +114,7 @@ The json or yaml output is not versioned and is not guaranteed to be stable acro
 ## Running Cluster Capacity as a Job Inside of a Pod
 
 Running the cluster capacity tool as a job inside of a pod has the advantage of
-being able to be run multiple times without needing user intervention. 
+being able to be run multiple times without needing user intervention.
 
 Follow these example steps to run Cluster Capacity as a job:
 
@@ -123,32 +126,8 @@ $ docker build -t cluster-capacity-image .
 
 ### 2. Setup an authorized user with the necessary permissions
 
-#### A. Create a role:
 ```
-$ cat << EOF| kubectl create -f -
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1beta1
-metadata:
-  name: cluster-capacity-role
-rules:
-- apiGroups: [""]
-  resources: ["pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "services"]
-  verbs: ["get", "watch", "list"]
-EOF
-```
-
-#### B. Create the service account which will be used to run the job:
-
-```
-$ kubectl create sa cluster-capacity-sa
-```
-
-#### C. Add the role to the service account:
-
-```
-$ kubectl create clusterrolebinding cluster-capacity-role \
-    --clusterrole=cluster-capacity-role \
-    --serviceaccount=default:cluster-capacity-sa
+$ kubectl apply -f config/rbac.yaml
 ```
 
 ### 3. Define and create the pod specification (pod.yaml):
@@ -333,3 +312,16 @@ Other possibilities:
 * incorporate re-scheduler
 * incorporate preemptive scheduling
 * include more of Kubelet's behaviour (e.g. recognize memory pressure, secrets/configmap existence test)
+
+## Community, discussion, contribution, and support
+
+Learn how to engage with the Kubernetes community on the [community page](http://kubernetes.io/community/).
+
+You can reach the maintainers of this project at:
+
+- [Slack channel](https://kubernetes.slack.com/messages/sig-scheduling)
+- [Mailing list](https://groups.google.com/forum/#!forum/kubernetes-sig-scheduling)
+
+### Code of conduct
+
+Participation in the Kubernetes community is governed by the [Kubernetes Code of Conduct](code-of-conduct.md).

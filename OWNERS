@@ -1,9 +1,7 @@
 approvers:
 - ingvagabund
-- aveshagarwal
-- hodovska
+- damemi
 reviewers:
 - ingvagabund
-- aveshagarwal
-- hodovska
+- damemi
 component: "kube-scheduler"

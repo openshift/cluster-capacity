@@ -24,8 +24,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
-	_ "k8s.io/kubernetes/plugin/pkg/scheduler/algorithmprovider"
+	_ "k8s.io/kubernetes/pkg/scheduler/algorithmprovider"
 )
+
+func init() {
+	if err := v1.AddToScheme(legacyscheme.Scheme); err != nil {
+		fmt.Printf("err: %v\n", err)
+	}
+}
 
 func PrintPod(pod *v1.Pod, format string) error {
 	var contentType string
