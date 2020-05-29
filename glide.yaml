@@ -58,3 +58,5 @@ import:
   - plugin/pkg/scheduler/api/latest
   - plugin/pkg/scheduler/factory
   - plugin/pkg/scheduler/schedulercache
+- package: golang.org/x/crypto
+  version: bac4c82f6975
