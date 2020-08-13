@@ -16,14 +16,21 @@ build:
 	go build -o hypercc sigs.k8s.io/cluster-capacity/cmd/hypercc
 	ln -sf hypercc cluster-capacity
 	ln -sf hypercc genpod
+
 run:
 	@./cluster-capacity --kubeconfig ~/.kube/config --podspec=examples/pod.yaml --verbose
 
-test:
-	./test.sh
+verify-gofmt:
+	./hack/verify-gofmt.sh
+
+test-unit:
+	./hack/unit-test.sh
 
 integration-tests:
 	./integration-tests.sh
+
+test-e2e:
+	./test/run-e2e-tests.sh
 
 image:
 	docker build -t cluster-capacity .
