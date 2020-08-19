@@ -2,18 +2,20 @@
 
 module k8s.io/csi-translation-lib
 
-go 1.12
+go 1.15
 
 require (
-	k8s.io/api v0.16.6
-	k8s.io/apimachinery v0.16.6
-	k8s.io/cloud-provider v0.16.6
+	github.com/stretchr/testify v1.4.0
+	k8s.io/api v0.19.0-rc.4
+	k8s.io/apimachinery v0.19.0-rc.4
+	k8s.io/cloud-provider v0.19.0-rc.4
+	k8s.io/klog/v2 v2.2.0
 )
 
 replace (
-	golang.org/x/tools => golang.org/x/tools v0.0.0-20190821162956-65e3620a7ae7
-	k8s.io/api => k8s.io/api v0.16.6
-	k8s.io/apimachinery => k8s.io/apimachinery v0.16.6
-	k8s.io/client-go => k8s.io/client-go v0.16.6
-	k8s.io/cloud-provider => k8s.io/cloud-provider v0.16.6
+	k8s.io/api => k8s.io/api v0.19.0-rc.4
+	k8s.io/apimachinery => k8s.io/apimachinery v0.19.0-rc.4
+	k8s.io/client-go => k8s.io/client-go v0.19.0-rc.4
+	k8s.io/cloud-provider => k8s.io/cloud-provider v0.19.0-rc.4
+	k8s.io/component-base => k8s.io/component-base v0.19.0-rc.4
 )
