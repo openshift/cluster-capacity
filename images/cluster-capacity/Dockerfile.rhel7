@@ -1,7 +1,7 @@
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.15-openshift-4.8 AS builder
 WORKDIR /go/src/sigs.k8s.io/cluster-capacity
 COPY . .
-RUN go build -o hypercc ./cmd/hypercc
+RUN GO111MODULE=auto go build -o hypercc ./cmd/hypercc
 
 FROM registry.ci.openshift.org/ocp/4.8:base
 COPY --from=builder /go/src/sigs.k8s.io/cluster-capacity/hypercc /usr/bin/
