@@ -1,7 +1,7 @@
 approvers:
 - ingvagabund
-- damemi
+- knelasevero
 reviewers:
 - ingvagabund
-- damemi
+- knelasevero
 component: "kube-scheduler"
