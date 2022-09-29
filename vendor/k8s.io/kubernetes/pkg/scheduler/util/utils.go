@@ -26,8 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
@@ -56,7 +58,7 @@ func GetPodStartTime(pod *v1.Pod) *metav1.Time {
 func GetEarliestPodStartTime(victims *extenderv1.Victims) *metav1.Time {
 	if len(victims.Pods) == 0 {
 		// should not reach here.
-		klog.Errorf("victims.Pods is empty. Should not reach here.")
+		klog.ErrorS(fmt.Errorf("victims.Pods is empty. Should not reach here"), "")
 		return nil
 	}
 
@@ -90,43 +92,19 @@ func MoreImportantPod(pod1, pod2 *v1.Pod) bool {
 	return GetPodStartTime(pod1).Before(GetPodStartTime(pod2))
 }
 
-// GetPodAffinityTerms gets pod affinity terms by a pod affinity object.
-func GetPodAffinityTerms(affinity *v1.Affinity) (terms []v1.PodAffinityTerm) {
-	if affinity != nil && affinity.PodAffinity != nil {
-		if len(affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 0 {
-			terms = affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution
-		}
-		// TODO: Uncomment this block when implement RequiredDuringSchedulingRequiredDuringExecution.
-		//if len(affinity.PodAffinity.RequiredDuringSchedulingRequiredDuringExecution) != 0 {
-		//	terms = append(terms, affinity.PodAffinity.RequiredDuringSchedulingRequiredDuringExecution...)
-		//}
-	}
-	return terms
-}
-
-// GetPodAntiAffinityTerms gets pod affinity terms by a pod anti-affinity.
-func GetPodAntiAffinityTerms(affinity *v1.Affinity) (terms []v1.PodAffinityTerm) {
-	if affinity != nil && affinity.PodAntiAffinity != nil {
-		if len(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 0 {
-			terms = affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution
-		}
-		// TODO: Uncomment this block when implement RequiredDuringSchedulingRequiredDuringExecution.
-		//if len(affinity.PodAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution) != 0 {
-		//	terms = append(terms, affinity.PodAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution...)
-		//}
-	}
-	return terms
-}
-
-// PatchPod calculates the delta bytes change from <old> to <new>,
+// PatchPodStatus calculates the delta bytes change from <old.Status> to <newStatus>,
 // and then submit a request to API server to patch the pod changes.
-func PatchPod(cs kubernetes.Interface, old *v1.Pod, new *v1.Pod) error {
-	oldData, err := json.Marshal(old)
+func PatchPodStatus(ctx context.Context, cs kubernetes.Interface, old *v1.Pod, newStatus *v1.PodStatus) error {
+	if newStatus == nil {
+		return nil
+	}
+
+	oldData, err := json.Marshal(v1.Pod{Status: old.Status})
 	if err != nil {
 		return err
 	}
 
-	newData, err := json.Marshal(new)
+	newData, err := json.Marshal(v1.Pod{Status: *newStatus})
 	if err != nil {
 		return err
 	}
@@ -139,26 +117,30 @@ func PatchPod(cs kubernetes.Interface, old *v1.Pod, new *v1.Pod) error {
 		return nil
 	}
 
-	_, err = cs.CoreV1().Pods(old.Namespace).Patch(context.TODO(), old.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
-	return err
+	patchFn := func() error {
+		_, err := cs.CoreV1().Pods(old.Namespace).Patch(ctx, old.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
+		return err
+	}
+
+	return retry.OnError(retry.DefaultBackoff, net.IsConnectionRefused, patchFn)
 }
 
 // DeletePod deletes the given <pod> from API server
-func DeletePod(cs kubernetes.Interface, pod *v1.Pod) error {
-	return cs.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{})
+func DeletePod(ctx context.Context, cs kubernetes.Interface, pod *v1.Pod) error {
+	return cs.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
 }
 
 // ClearNominatedNodeName internally submit a patch request to API server
 // to set each pods[*].Status.NominatedNodeName> to "".
-func ClearNominatedNodeName(cs kubernetes.Interface, pods ...*v1.Pod) utilerrors.Aggregate {
+func ClearNominatedNodeName(ctx context.Context, cs kubernetes.Interface, pods ...*v1.Pod) utilerrors.Aggregate {
 	var errs []error
 	for _, p := range pods {
 		if len(p.Status.NominatedNodeName) == 0 {
 			continue
 		}
-		podCopy := p.DeepCopy()
-		podCopy.Status.NominatedNodeName = ""
-		if err := PatchPod(cs, p, podCopy); err != nil {
+		podStatusCopy := p.Status.DeepCopy()
+		podStatusCopy.NominatedNodeName = ""
+		if err := PatchPodStatus(ctx, cs, p, podStatusCopy); err != nil {
 			errs = append(errs, err)
 		}
 	}

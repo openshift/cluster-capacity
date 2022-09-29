@@ -1,23 +1,21 @@
-///*
-//Copyright 2017 The Kubernetes Authors.
+// /*
+// Copyright 2017 The Kubernetes Authors.
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
-//*/
-//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// */
 package framework
 
 import (
-	"fmt"
 	goruntime "runtime"
 	"testing"
 
@@ -27,9 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/component-base/version"
-	kubescheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
-	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	"k8s.io/utils/pointer"
+
+	"sigs.k8s.io/cluster-capacity/pkg/utils"
 )
 
 // func init() {
@@ -49,7 +46,7 @@ func getGeneralNode(nodeName string) *v1.Node {
 					Type:               v1.NodeMemoryPressure,
 					Status:             v1.ConditionFalse,
 					Reason:             "KubeletHasSufficientMemory",
-					Message:            fmt.Sprintf("kubelet has sufficient memory available"),
+					Message:            "kubelet has sufficient memory available",
 					LastHeartbeatTime:  metav1.Time{},
 					LastTransitionTime: metav1.Time{},
 				},
@@ -57,7 +54,7 @@ func getGeneralNode(nodeName string) *v1.Node {
 					Type:               v1.NodeDiskPressure,
 					Status:             v1.ConditionFalse,
 					Reason:             "KubeletHasNoDiskPressure",
-					Message:            fmt.Sprintf("kubelet has no disk pressure"),
+					Message:            "kubelet has no disk pressure",
 					LastHeartbeatTime:  metav1.Time{},
 					LastTransitionTime: metav1.Time{},
 				},
@@ -65,7 +62,7 @@ func getGeneralNode(nodeName string) *v1.Node {
 					Type:               v1.NodeReady,
 					Status:             v1.ConditionTrue,
 					Reason:             "KubeletReady",
-					Message:            fmt.Sprintf("kubelet is posting ready status"),
+					Message:            "kubelet is posting ready status",
 					LastHeartbeatTime:  metav1.Time{},
 					LastTransitionTime: metav1.Time{},
 				},
@@ -218,45 +215,16 @@ func TestPrediction(t *testing.T) {
 
 			// 2. create predictor
 			// - create simple configuration file for scheduler (use the default values or from systemd env file if reasonable)
-			opts, err := kubescheduleroptions.NewOptions()
-			if err != nil {
-				t.Fatalf("unable to create scheduler options: %v", err)
-			}
-
-			// inject scheduler config config
-			opts.ComponentConfig = kubeschedulerconfig.KubeSchedulerConfiguration{
-				AlgorithmSource: kubeschedulerconfig.SchedulerAlgorithmSource{
-					Provider: pointer.StringPtr("DefaultProvider"),
-				},
-				Profiles: []kubeschedulerconfig.KubeSchedulerProfile{
-					{
-						SchedulerName: v1.DefaultSchedulerName,
-						Plugins: &kubeschedulerconfig.Plugins{
-							Bind: &kubeschedulerconfig.PluginSet{
-								Enabled: []kubeschedulerconfig.Plugin{
-									{
-										Name: "ClusterCapacityBinder",
-									},
-								},
-								Disabled: []kubeschedulerconfig.Plugin{
-									{
-										Name: "DefaultBinder",
-									},
-								},
-							},
-						},
-					},
-				},
-			}
-
-			kubeSchedulerConfig, err := InitKubeSchedulerConfiguration(opts)
+			kubeSchedulerConfig, err := utils.BuildKubeSchedulerCompletedConfig(nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			cc, err := New(kubeSchedulerConfig,
+				nil,
 				simulatedPod,
 				test.limit,
+				nil,
 			)
 
 			if err != nil {

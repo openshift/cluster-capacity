@@ -17,7 +17,8 @@ limitations under the License.
 package cache
 
 import (
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -30,31 +31,31 @@ import (
 //
 // State Machine of a pod's events in scheduler's cache:
 //
+//	+-------------------------------------------+  +----+
+//	|                            Add            |  |    |
+//	|                                           |  |    | Update
+//	+      Assume                Add            v  v    |
 //
-//   +-------------------------------------------+  +----+
-//   |                            Add            |  |    |
-//   |                                           |  |    | Update
-//   +      Assume                Add            v  v    |
-//Initial +--------> Assumed +------------+---> Added <--+
-//   ^                +   +               |       +
-//   |                |   |               |       |
-//   |                |   |           Add |       | Remove
-//   |                |   |               |       |
-//   |                |   |               +       |
-//   +----------------+   +-----------> Expired   +----> Deleted
-//         Forget             Expire
+// Initial +--------> Assumed +------------+---> Added <--+
 //
+//	^                +   +               |       +
+//	|                |   |               |       |
+//	|                |   |           Add |       | Remove
+//	|                |   |               |       |
+//	|                |   |               +       |
+//	+----------------+   +-----------> Expired   +----> Deleted
+//	      Forget             Expire
 //
 // Note that an assumed pod can expire, because if we haven't received Add event notifying us
 // for a while, there might be some problems and we shouldn't keep the pod in cache anymore.
 //
 // Note that "Initial", "Expired", and "Deleted" pods do not actually exist in cache.
 // Based on existing use cases, we are making the following assumptions:
-// - No pod would be assumed twice
-// - A pod could be added without going through scheduler. In this case, we will see Add but not Assume event.
-// - If a pod wasn't added, it wouldn't be removed or updated.
-// - Both "Expired" and "Deleted" are valid end states. In case of some problems, e.g. network issue,
-//   a pod might have changed its state (e.g. added and deleted) without delivering notification to the cache.
+//   - No pod would be assumed twice
+//   - A pod could be added without going through scheduler. In this case, we will see Add but not Assume event.
+//   - If a pod wasn't added, it wouldn't be removed or updated.
+//   - Both "Expired" and "Deleted" are valid end states. In case of some problems, e.g. network issue,
+//     a pod might have changed its state (e.g. added and deleted) without delivering notification to the cache.
 type Cache interface {
 	// NodeCount returns the number of nodes in the cache.
 	// DO NOT use outside of tests.
@@ -93,10 +94,12 @@ type Cache interface {
 	IsAssumedPod(pod *v1.Pod) (bool, error)
 
 	// AddNode adds overall information about node.
-	AddNode(node *v1.Node) error
+	// It returns a clone of added NodeInfo object.
+	AddNode(node *v1.Node) *framework.NodeInfo
 
 	// UpdateNode updates overall information about node.
-	UpdateNode(oldNode, newNode *v1.Node) error
+	// It returns a clone of updated NodeInfo object.
+	UpdateNode(oldNode, newNode *v1.Node) *framework.NodeInfo
 
 	// RemoveNode removes overall information about node.
 	RemoveNode(node *v1.Node) error
@@ -114,6 +117,6 @@ type Cache interface {
 
 // Dump is a dump of the cache state.
 type Dump struct {
-	AssumedPods map[string]bool
+	AssumedPods sets.String
 	Nodes       map[string]*framework.NodeInfo
 }
