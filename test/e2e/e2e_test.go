@@ -28,11 +28,9 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	kubescheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
-	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	"k8s.io/utils/pointer"
 
 	"sigs.k8s.io/cluster-capacity/pkg/framework"
+	"sigs.k8s.io/cluster-capacity/pkg/utils"
 )
 
 const (
@@ -40,7 +38,7 @@ const (
 	limit    = 5
 )
 
-func CreateClient(kubeconfig string) (clientset.Interface, error) {
+func CreateRestConfig(kubeconfig string) (*rest.Config, error) {
 	var cfg *rest.Config
 	if len(kubeconfig) != 0 {
 		master, err := GetMasterFromKubeconfig(kubeconfig)
@@ -60,8 +58,7 @@ func CreateClient(kubeconfig string) (clientset.Interface, error) {
 			return nil, fmt.Errorf("Unable to build in cluster config: %v", err)
 		}
 	}
-
-	return clientset.NewForConfig(cfg)
+	return cfg, nil
 }
 
 func GetMasterFromKubeconfig(filename string) (string, error) {
@@ -81,19 +78,24 @@ func GetMasterFromKubeconfig(filename string) (string, error) {
 	return "", fmt.Errorf("Failed to get master address from kubeconfig")
 }
 
-func initializeClient(t *testing.T) (clientset.Interface, chan struct{}) {
-	clientSet, err := CreateClient(os.Getenv("KUBECONFIG"))
+func initializeClient(t *testing.T) (*rest.Config, clientset.Interface, chan struct{}) {
+	restConfig, err := CreateRestConfig(os.Getenv("KUBECONFIG"))
+	if err != nil {
+		t.Fatalf("Error during rest config creation with %v", err)
+	}
+
+	clientSet, err := clientset.NewForConfig(restConfig)
 	if err != nil {
 		t.Fatalf("Error during client creation with %v", err)
 	}
 
-	stopChannel := make(chan struct{}, 0)
+	stopChannel := make(chan struct{})
 
 	sharedInformerFactory := informers.NewSharedInformerFactory(clientSet, 0)
 	sharedInformerFactory.Start(stopChannel)
 	sharedInformerFactory.WaitForCacheSync(stopChannel)
 
-	return clientSet, stopChannel
+	return restConfig, clientSet, stopChannel
 }
 
 func buildSimulatedPod() *v1.Pod {
@@ -132,53 +134,26 @@ func buildSimulatedPod() *v1.Pod {
 }
 
 func TestLimitReached(t *testing.T) {
-	clientSet, stopCh := initializeClient(t)
+	restConfig, clientSet, stopCh := initializeClient(t)
 	defer close(stopCh)
 
-	opts, err := kubescheduleroptions.NewOptions()
-	if err != nil {
-		t.Fatalf("unable to create scheduler options: %v", err)
-	}
-
-	opts.ComponentConfig = kubeschedulerconfig.KubeSchedulerConfiguration{
-		AlgorithmSource: kubeschedulerconfig.SchedulerAlgorithmSource{
-			Provider: pointer.StringPtr("DefaultProvider"),
-		},
-		Profiles: []kubeschedulerconfig.KubeSchedulerProfile{
-			{
-				SchedulerName: v1.DefaultSchedulerName,
-				Plugins: &kubeschedulerconfig.Plugins{
-					Bind: &kubeschedulerconfig.PluginSet{
-						Enabled: []kubeschedulerconfig.Plugin{
-							{
-								Name: "ClusterCapacityBinder",
-							},
-						},
-						Disabled: []kubeschedulerconfig.Plugin{
-							{
-								Name: "DefaultBinder",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	kubeSchedulerConfig, err := framework.InitKubeSchedulerConfiguration(opts)
+	kubeSchedulerConfig, err := utils.BuildKubeSchedulerCompletedConfig(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	cc, err := framework.New(kubeSchedulerConfig,
+		restConfig,
 		buildSimulatedPod(),
 		limit,
+		nil,
 	)
-	defer cc.Close()
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
+
+	defer cc.Close()
 
 	if err := cc.SyncWithClient(clientSet); err != nil {
 		t.Fatalf("Unable to sync resources: %v", err)

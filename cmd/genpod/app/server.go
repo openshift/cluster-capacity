@@ -26,7 +26,6 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	_ "k8s.io/kubernetes/pkg/scheduler/algorithmprovider"
 
 	"sigs.k8s.io/cluster-capacity/cmd/genpod/app/options"
 	nspod "sigs.k8s.io/cluster-capacity/pkg/client"
@@ -43,7 +42,9 @@ func NewGenPodCommand() *cobra.Command {
 			err := Validate(opt)
 			if err != nil {
 				fmt.Println(err)
-				cmd.Help()
+				if err := cmd.Help(); err != nil {
+					fmt.Println(err)
+				}
 				return
 			}
 			err = Run(opt)

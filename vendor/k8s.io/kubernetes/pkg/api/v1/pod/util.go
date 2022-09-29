@@ -23,8 +23,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/kubernetes/pkg/features"
 )
 
 // FindPort locates the container port for the given pod and portName.  If the
@@ -68,11 +66,7 @@ const AllContainers ContainerType = (InitContainers | Containers | EphemeralCont
 // AllFeatureEnabledContainers returns a ContainerType mask which includes all container
 // types except for the ones guarded by feature gate.
 func AllFeatureEnabledContainers() ContainerType {
-	containerType := AllContainers
-	if !utilfeature.DefaultFeatureGate.Enabled(features.EphemeralContainers) {
-		containerType &= ^EphemeralContainers
-	}
-	return containerType
+	return AllContainers
 }
 
 // ContainerVisitor is called with each container spec, and returns true
@@ -81,6 +75,17 @@ type ContainerVisitor func(container *v1.Container, containerType ContainerType)
 
 // Visitor is called with each object name, and returns true if visiting should continue
 type Visitor func(name string) (shouldContinue bool)
+
+func skipEmptyNames(visitor Visitor) Visitor {
+	return func(name string) bool {
+		if len(name) == 0 {
+			// continue visiting
+			return true
+		}
+		// delegate to visitor
+		return visitor(name)
+	}
+}
 
 // VisitContainers invokes the visitor function with a pointer to every container
 // spec in the given pod spec with type set in mask. If visitor returns false,
@@ -116,6 +121,7 @@ func VisitContainers(podSpec *v1.PodSpec, mask ContainerType, visitor ContainerV
 // Transitive references (e.g. pod -> pvc -> pv -> secret) are not visited.
 // Returns true if visiting completed, false if visiting was short-circuited.
 func VisitPodSecretNames(pod *v1.Pod, visitor Visitor) bool {
+	visitor = skipEmptyNames(visitor)
 	for _, reference := range pod.Spec.ImagePullSecrets {
 		if !visitor(reference.Name) {
 			return false
@@ -205,6 +211,7 @@ func visitContainerSecretNames(container *v1.Container, visitor Visitor) bool {
 // Transitive references (e.g. pod -> pvc -> pv -> secret) are not visited.
 // Returns true if visiting completed, false if visiting was short-circuited.
 func VisitPodConfigmapNames(pod *v1.Pod, visitor Visitor) bool {
+	visitor = skipEmptyNames(visitor)
 	VisitContainers(&pod.Spec, AllContainers, func(c *v1.Container, containerType ContainerType) bool {
 		return visitContainerConfigmapNames(c, visitor)
 	})
@@ -277,7 +284,7 @@ func IsPodAvailable(pod *v1.Pod, minReadySeconds int32, now metav1.Time) bool {
 
 	c := GetPodReadyCondition(pod.Status)
 	minReadySecondsDuration := time.Duration(minReadySeconds) * time.Second
-	if minReadySeconds == 0 || !c.LastTransitionTime.IsZero() && c.LastTransitionTime.Add(minReadySecondsDuration).Before(now.Time) {
+	if minReadySeconds == 0 || (!c.LastTransitionTime.IsZero() && c.LastTransitionTime.Add(minReadySecondsDuration).Before(now.Time)) {
 		return true
 	}
 	return false
@@ -288,9 +295,25 @@ func IsPodReady(pod *v1.Pod) bool {
 	return IsPodReadyConditionTrue(pod.Status)
 }
 
+// IsPodTerminal returns true if a pod is terminal, all containers are stopped and cannot ever regress.
+func IsPodTerminal(pod *v1.Pod) bool {
+	return IsPodPhaseTerminal(pod.Status.Phase)
+}
+
+// IsPhaseTerminal returns true if the pod's phase is terminal.
+func IsPodPhaseTerminal(phase v1.PodPhase) bool {
+	return phase == v1.PodFailed || phase == v1.PodSucceeded
+}
+
 // IsPodReadyConditionTrue returns true if a pod is ready; false otherwise.
 func IsPodReadyConditionTrue(status v1.PodStatus) bool {
 	condition := GetPodReadyCondition(status)
+	return condition != nil && condition.Status == v1.ConditionTrue
+}
+
+// IsContainersReadyConditionTrue returns true if a pod is ready; false otherwise.
+func IsContainersReadyConditionTrue(status v1.PodStatus) bool {
+	condition := GetContainersReadyCondition(status)
 	return condition != nil && condition.Status == v1.ConditionTrue
 }
 
@@ -298,6 +321,13 @@ func IsPodReadyConditionTrue(status v1.PodStatus) bool {
 // Returns nil if the condition is not present.
 func GetPodReadyCondition(status v1.PodStatus) *v1.PodCondition {
 	_, condition := GetPodCondition(&status, v1.PodReady)
+	return condition
+}
+
+// GetContainersReadyCondition extracts the containers ready condition from the given status and returns that.
+// Returns nil if the condition is not present.
+func GetContainersReadyCondition(status v1.PodStatus) *v1.PodCondition {
+	_, condition := GetPodCondition(&status, v1.ContainersReady)
 	return condition
 }
 
