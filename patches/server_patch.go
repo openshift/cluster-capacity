@@ -1,10 +1,10 @@
 package app
 
 import (
-	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
-func (o *Options) GetConfig() *componentconfig.KubeSchedulerConfiguration {
+func (o *Options) GetConfig() *kubeschedulerconfig.KubeSchedulerConfiguration {
 	return o.config
 }
 
