@@ -2,8 +2,6 @@ module sigs.k8s.io/cluster-capacity
 
 go 1.21
 
-toolchain go1.21.1
-
 require (
 	github.com/lithammer/dedent v1.1.0
 	github.com/satori/go.uuid v1.2.0
