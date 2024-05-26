@@ -1,6 +1,6 @@
 module sigs.k8s.io/cluster-capacity
 
-go 1.21
+go 1.22
 
 require (
 	github.com/lithammer/dedent v1.1.0
