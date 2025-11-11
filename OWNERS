@@ -1,8 +1,7 @@
 approvers:
 - ingvagabund
-- ravisantoshgudimetla
-- damemi
+- ricardomaraschini
 reviewers:
 - ingvagabund
-- ravisantoshgudimetla
-- damemi
+- ricardomaraschini
+component: "kube-scheduler"
