@@ -49,8 +49,8 @@ verify-boilerplates:
 	go tool boilersuite --author "Kubernetes" --skip defs .
 
 
-.PHONY: test test-unit test-integration test-e2e
-test: test-unit test-integration test-e2e
+.PHONY: test test-unit
+test: test-unit
 
 test-unit:
 	./test/run-unit-test.sh
