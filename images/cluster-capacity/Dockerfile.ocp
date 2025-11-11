@@ -1,0 +1,10 @@
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.21 AS builder
+WORKDIR /go/src/sigs.k8s.io/cluster-capacity
+COPY . .
+RUN GO111MODULE=auto go build -o hypercc ./cmd/hypercc
+
+FROM registry.ci.openshift.org/ocp/4.21:base-rhel9
+COPY --from=builder /go/src/sigs.k8s.io/cluster-capacity/hypercc /usr/bin/
+RUN ln -sf /usr/bin/hypercc /usr/bin/cluster-capacity
+RUN ln -sf /usr/bin/hypercc /usr/bin/genpod
+CMD ["/usr/bin/cluster-capacity", "--help"]
