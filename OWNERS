@@ -1,5 +1,7 @@
 approvers:
 - ingvagabund
+- ricardomaraschini
 reviewers:
 - ingvagabund
+- ricardomaraschini
 component: "kube-scheduler"
