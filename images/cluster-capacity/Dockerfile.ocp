@@ -3,7 +3,7 @@ WORKDIR /go/src/sigs.k8s.io/cluster-capacity
 COPY . .
 RUN GO111MODULE=auto go build -o hypercc ./cmd/hypercc
 
-FROM registry.ci.openshift.org/ocp/4.22:base-rhel9-minimal
+FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
 COPY --from=builder /go/src/sigs.k8s.io/cluster-capacity/hypercc /usr/bin/
 RUN ln -sf /usr/bin/hypercc /usr/bin/cluster-capacity
 RUN ln -sf /usr/bin/hypercc /usr/bin/genpod
